@@ -1,15 +1,22 @@
 import Phaser from 'phaser';
 import { Player } from '../../player';
 import { Minion } from '../../minions';
+import { Treasure } from '../../treasure';
 import { StaminaBar } from '../ui/StaminaBar';
+import { ScoreDisplay } from '../ui/ScoreDisplay';
 import { SelectionManager } from '../../../core/components';
-import { MoveCommand } from '../../../core/commands';
+import { MoveCommand, CollectCommand } from '../../../core/commands';
 
 export class LevelScene extends Phaser.Scene {
   private player?: Player;
   private staminaBar?: StaminaBar;
+  private scoreDisplay?: ScoreDisplay;
   private minions: Minion[] = [];
+  private treasures: Treasure[] = [];
   private selectionManager = new SelectionManager();
+  private whistleRadius = 100;
+  private whistleCircle?: Phaser.GameObjects.Graphics;
+  private spaceKey?: Phaser.Input.Keyboard.Key;
 
   constructor() {
     super({ key: 'LevelScene' });
@@ -40,6 +47,10 @@ export class LevelScene extends Phaser.Scene {
 
     // Create UI
     this.staminaBar = new StaminaBar(this);
+    this.scoreDisplay = new ScoreDisplay(this);
+
+    // Spawn treasures around the world
+    this.spawnTreasures(worldWidth, worldHeight);
 
     // Spawn multiple test minions near the player
     const minionPositions = [
@@ -79,9 +90,12 @@ export class LevelScene extends Phaser.Scene {
       }
     });
 
+    // Setup whistle selection (Space key)
+    this.setupWhistleSelection();
+
     // Add instructions
     const instructions = this.add.text(10, 10,
-      'WASD/Arrows: Move | Shift: Sprint | Click: Select | Shift+Click: Multi-Select | Right-Click: Move',
+      'WASD/Arrows: Move | Shift: Sprint | Click: Select | Space: Whistle Select | Right-Click: Command',
       {
         fontSize: '12px',
         color: '#ffffff',
@@ -131,6 +145,80 @@ export class LevelScene extends Phaser.Scene {
 
       const circle = this.add.circle(x, y, size, color);
       circle.setAlpha(0.6);
+    }
+  }
+
+  private setupWhistleSelection(): void {
+    // Create whistle circle graphic (hidden by default)
+    this.whistleCircle = this.add.graphics();
+    this.whistleCircle.setVisible(false);
+
+    // Setup Space key
+    if (this.input.keyboard) {
+      this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+
+      this.spaceKey.on('down', () => {
+        // Show whistle circle
+        this.updateWhistleCircle();
+        this.whistleCircle?.setVisible(true);
+
+        // Select all minions within radius of cursor
+        const pointer = this.input.activePointer;
+        const minionsInRadius = this.minions.filter(minion => {
+          const distance = Phaser.Math.Distance.Between(
+            pointer.worldX, pointer.worldY,
+            minion.x, minion.y
+          );
+          return distance <= this.whistleRadius;
+        });
+
+        // Replace selection with minions in radius
+        this.selectionManager.clearSelection();
+        this.selectionManager.selectMultiple(minionsInRadius);
+      });
+
+      this.spaceKey.on('up', () => {
+        // Hide whistle circle
+        this.whistleCircle?.setVisible(false);
+      });
+    }
+  }
+
+  private updateWhistleCircle(): void {
+    if (!this.whistleCircle) return;
+
+    const pointer = this.input.activePointer;
+    this.whistleCircle.clear();
+    this.whistleCircle.lineStyle(3, 0xffff00, 0.8);
+    this.whistleCircle.strokeCircle(pointer.worldX, pointer.worldY, this.whistleRadius);
+    this.whistleCircle.fillStyle(0xffff00, 0.1);
+    this.whistleCircle.fillCircle(pointer.worldX, pointer.worldY, this.whistleRadius);
+  }
+
+  private spawnTreasures(worldWidth: number, worldHeight: number): void {
+    // Spawn 10 treasures randomly around the world
+    for (let i = 0; i < 10; i++) {
+      const x = Phaser.Math.Between(100, worldWidth - 100);
+      const y = Phaser.Math.Between(100, worldHeight - 100);
+
+      const treasure = new Treasure(this, x, y);
+      this.treasures.push(treasure);
+
+      // Setup right-click to collect
+      treasure.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
+        if (pointer.rightButtonDown() && this.selectionManager.hasSelection()) {
+          const collectCommand = new CollectCommand(treasure, (value) => {
+            this.scoreDisplay?.addScore(value);
+            // Remove from treasures array
+            const index = this.treasures.indexOf(treasure);
+            if (index > -1) {
+              this.treasures.splice(index, 1);
+            }
+          });
+          this.selectionManager.issueCommand(collectCommand);
+          event.stopPropagation();
+        }
+      });
     }
   }
 }

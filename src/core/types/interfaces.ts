@@ -11,10 +11,7 @@ export interface Selectable {
  * Interface for entities that can receive and execute commands
  */
 export interface Commandable {
-  moveTo(x: number, y: number): void;
-  // Future commands:
-  // attack(target: Enemy): void;
-  // collect(treasure: Treasure): void;
+  moveTo(x: number, y: number, onArrival?: () => void): void;
 }
 
 /**

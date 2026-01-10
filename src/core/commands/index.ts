@@ -1,2 +1,2 @@
 // Export all commands
-export { type Command, MoveCommand } from './Command';
+export { type Command, MoveCommand, CollectCommand } from './Command';

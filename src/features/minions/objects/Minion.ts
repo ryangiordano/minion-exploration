@@ -6,6 +6,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit {
   private selected = false;
   private selectionCircle?: Phaser.GameObjects.Graphics;
   private movement!: TargetedMovement; // Initialized after super()
+  private arrivalCallback?: () => void;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     super(scene, x, y, '');
@@ -58,7 +59,8 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit {
     return this.selected;
   }
 
-  public moveTo(x: number, y: number): void {
+  public moveTo(x: number, y: number, onArrival?: () => void): void {
+    this.arrivalCallback = onArrival;
     this.movement.moveTo(x, y);
   }
 
@@ -73,7 +75,14 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit {
     }
 
     // Update movement component
-    this.movement.update();
+    const arrived = this.movement.update();
+
+    // Fire arrival callback if we just arrived
+    if (arrived && this.arrivalCallback) {
+      const callback = this.arrivalCallback;
+      this.arrivalCallback = undefined;
+      callback();
+    }
   }
 
   destroy(fromScene?: boolean): void {
