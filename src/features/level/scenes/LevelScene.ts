@@ -2,12 +2,14 @@ import Phaser from 'phaser';
 import { Player } from '../../player';
 import { Minion } from '../../minions';
 import { StaminaBar } from '../ui/StaminaBar';
+import { SelectionManager } from '../../../core/components';
+import { MoveCommand } from '../../../core/commands';
 
 export class LevelScene extends Phaser.Scene {
   private player?: Player;
   private staminaBar?: StaminaBar;
   private minions: Minion[] = [];
-  private selectedMinion?: Minion;
+  private selectionManager = new SelectionManager();
 
   constructor() {
     super({ key: 'LevelScene' });
@@ -39,34 +41,47 @@ export class LevelScene extends Phaser.Scene {
     // Create UI
     this.staminaBar = new StaminaBar(this);
 
-    // Spawn a test minion near the player
-    const minion = new Minion(this, worldWidth / 2 + 100, worldHeight / 2 + 50);
-    this.minions.push(minion);
+    // Spawn multiple test minions near the player
+    const minionPositions = [
+      { x: worldWidth / 2 + 100, y: worldHeight / 2 + 50 },
+      { x: worldWidth / 2 - 100, y: worldHeight / 2 + 50 },
+      { x: worldWidth / 2, y: worldHeight / 2 + 100 }
+    ];
 
-    // Setup minion selection handling
-    this.minions.forEach(minion => {
-      minion.on('pointerdown', () => {
-        // Deselect all other minions
-        this.minions.forEach(m => m.deselect());
-        // Select this minion
-        minion.select();
-        this.selectedMinion = minion;
+    minionPositions.forEach(pos => {
+      const minion = new Minion(this, pos.x, pos.y);
+      this.minions.push(minion);
+
+      // Setup selection handling
+      minion.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
+        if (pointer.leftButtonDown()) {
+          // Shift-click for multi-select, regular click for single select
+          if (this.input.keyboard && this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT).isDown) {
+            this.selectionManager.toggleSelection(minion);
+          } else {
+            this.selectionManager.select(minion);
+          }
+          // Stop event from propagating to background click
+          event.stopPropagation();
+        }
       });
     });
 
-    // Setup right-click to move selected minion
+    // Setup background click handlers
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (pointer.rightButtonDown() && this.selectedMinion) {
-        // Get world position (accounting for camera)
-        const worldX = pointer.worldX;
-        const worldY = pointer.worldY;
-        this.selectedMinion.moveTo(worldX, worldY);
+      if (pointer.rightButtonDown() && this.selectionManager.hasSelection()) {
+        // Issue move command to all selected units
+        const moveCommand = new MoveCommand(pointer.worldX, pointer.worldY);
+        this.selectionManager.issueCommand(moveCommand);
+      } else if (pointer.leftButtonDown()) {
+        // Left-click on background clears selection
+        this.selectionManager.clearSelection();
       }
     });
 
     // Add instructions
     const instructions = this.add.text(10, 10,
-      'WASD/Arrows: Move | Shift: Sprint | Left-Click: Select Minion | Right-Click: Move Minion',
+      'WASD/Arrows: Move | Shift: Sprint | Click: Select | Shift+Click: Multi-Select | Right-Click: Move',
       {
         fontSize: '12px',
         color: '#ffffff',

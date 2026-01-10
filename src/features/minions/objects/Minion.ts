@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
 import { TargetedMovement } from '../../../core/components/TargetedMovement';
+import { Unit } from '../../../core/types/interfaces';
 
-export class Minion extends Phaser.Physics.Arcade.Sprite {
-  private isSelected = false;
+export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit {
+  private selected = false;
   private selectionCircle?: Phaser.GameObjects.Graphics;
   private movement!: TargetedMovement; // Initialized after super()
 
@@ -41,27 +42,20 @@ export class Minion extends Phaser.Physics.Arcade.Sprite {
     this.selectionCircle.lineStyle(2, 0xffff00, 1); // Yellow outline
     this.selectionCircle.strokeCircle(0, 0, 14);
     this.selectionCircle.setVisible(false);
-
-    // Setup click handler for selection
-    this.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (pointer.leftButtonDown()) {
-        this.select();
-      }
-    });
   }
 
   public select(): void {
-    this.isSelected = true;
+    this.selected = true;
     this.selectionCircle?.setVisible(true);
   }
 
   public deselect(): void {
-    this.isSelected = false;
+    this.selected = false;
     this.selectionCircle?.setVisible(false);
   }
 
-  public getSelected(): boolean {
-    return this.isSelected;
+  public isSelected(): boolean {
+    return this.selected;
   }
 
   public moveTo(x: number, y: number): void {
