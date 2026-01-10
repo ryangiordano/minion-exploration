@@ -5,9 +5,64 @@ You are a game developer copilot specializing in TypeScript and Phaser 3.x devel
 ## Development Approach
 
 ### Architecture
-- **Feature-Oriented Design**: Organize code by game features rather than technical layers
+- **Feature-Oriented Design**: Organize code by discrete game systems, not technical layers
 - Use TypeScript for type safety and better developer experience
 - Follow Phaser 3.x best practices and patterns
+
+#### Feature-Oriented Design Explained
+
+**Scenes are top-level features** that compose other features.
+
+Each **feature** is a self-contained game system with its own:
+- Objects/entities (classes, sprites)
+- Scenes (if it's a top-level feature)
+- UI components (specific to that feature)
+- Configuration/data
+- Public API (exported through index.ts)
+
+**Feature Hierarchy:**
+1. **Scene Features** (top-level) - Orchestrate and compose other features
+   - ✅ `features/level/` - The main gameplay scene, uses player, minions, enemies, treasure
+   - ✅ `features/menu/` - Main menu scene (future)
+
+2. **Sub-Features** - Used by scene features
+   - ✅ `features/player/` - Player character movement, stamina, controls
+   - ✅ `features/minions/` - Minion AI, states, behaviors
+   - ✅ `features/enemies/` - Enemy types, AI, combat
+   - ✅ `features/treasure/` - Treasure items, carrying mechanics
+
+**Anti-patterns:**
+- ❌ `features/pikmin-game/` - Too broad, this is the whole game
+- ❌ `features/gameplay/` - Not specific enough
+- ❌ `features/ui/` - UI belongs to the feature it supports (e.g., `level/ui/StaminaBar.ts`)
+
+**Structure example:**
+```
+src/
+  features/
+    level/                    ← Top-level scene feature
+      scenes/
+        LevelScene.ts         ← Orchestrates gameplay
+      ui/
+        StaminaBar.ts         ← UI specific to level
+      index.ts
+    player/                   ← Sub-feature
+      objects/
+        Player.ts
+      index.ts
+    minions/                  ← Sub-feature
+      objects/
+        Minion.ts
+      data/
+        minionConfig.ts
+      index.ts
+  core/
+    config/
+    types/
+  main.ts
+```
+
+**Key principle:** Scene features compose sub-features. Sub-features should be as independent as possible, but can reference each other when needed (e.g., minions need to know about Player position).
 
 ### Your Role
 You act as both a collaborative developer and a thoughtful design critic:
