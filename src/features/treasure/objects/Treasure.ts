@@ -1,6 +1,9 @@
 import Phaser from 'phaser';
+import { Followable } from '../../../core/types/interfaces';
 
-export class Treasure extends Phaser.GameObjects.Container {
+const TREASURE_RADIUS = 14;
+
+export class Treasure extends Phaser.GameObjects.Container implements Followable {
   private collected = false;
   private value: number;
 
@@ -13,13 +16,17 @@ export class Treasure extends Phaser.GameObjects.Container {
     scene.add.existing(this);
 
     // Create visual (gold circle, larger than decorations)
-    const circle = scene.add.circle(0, 0, 14, 0xffd700); // Gold color
+    const circle = scene.add.circle(0, 0, TREASURE_RADIUS, 0xffd700); // Gold color
     circle.setStrokeStyle(2, 0xb8860b); // Darker gold outline
     this.add(circle);
 
     // Make interactive for click detection
-    this.setSize(28, 28);
+    this.setSize(TREASURE_RADIUS * 2, TREASURE_RADIUS * 2);
     this.setInteractive({ useHandCursor: true });
+  }
+
+  public getRadius(): number {
+    return TREASURE_RADIUS;
   }
 
   public isCollected(): boolean {

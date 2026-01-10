@@ -8,10 +8,20 @@ export interface Selectable {
 }
 
 /**
+ * Interface for entities that can be followed/targeted
+ */
+export interface Followable {
+  x: number;
+  y: number;
+  getRadius(): number;
+}
+
+/**
  * Interface for entities that can receive and execute commands
  */
 export interface Commandable {
   moveTo(x: number, y: number, onArrival?: () => void): void;
+  followTarget(target: Followable, onArrival: () => void): void;
 }
 
 /**

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SelectionManager } from './SelectionManager';
-import { Unit } from '../types/interfaces';
+import { Unit, Followable } from '../types/interfaces';
 import { Command } from '../commands';
 
 // Mock Unit implementation for testing
@@ -8,6 +8,7 @@ class MockUnit implements Unit {
   private _selected = false;
   public moveToX?: number;
   public moveToY?: number;
+  public lastFollowTarget?: Followable;
 
   select(): void {
     this._selected = true;
@@ -24,6 +25,10 @@ class MockUnit implements Unit {
   moveTo(x: number, y: number): void {
     this.moveToX = x;
     this.moveToY = y;
+  }
+
+  followTarget(target: Followable, _onArrival: () => void): void {
+    this.lastFollowTarget = target;
   }
 }
 

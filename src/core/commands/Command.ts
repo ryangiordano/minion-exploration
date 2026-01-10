@@ -10,21 +10,30 @@ export interface Command {
 
 /**
  * Command to move a unit to a specific position
+ * Each unit gets a random offset to spread them around the target point
  */
 export class MoveCommand implements Command {
+  private readonly spreadRadius = 30;
+
   constructor(
     private readonly x: number,
     private readonly y: number
   ) {}
 
   execute(unit: Commandable): void {
-    unit.moveTo(this.x, this.y);
+    // Add random offset so units don't all clump at the same point
+    const angle = Math.random() * Math.PI * 2;
+    const distance = Math.random() * this.spreadRadius;
+    const offsetX = Math.cos(angle) * distance;
+    const offsetY = Math.sin(angle) * distance;
+
+    unit.moveTo(this.x + offsetX, this.y + offsetY);
   }
 }
 
 /**
  * Command to collect a treasure item
- * Unit moves to treasure, first to arrive collects it
+ * Unit follows treasure (supports moving targets), first to touch collects it
  */
 export class CollectCommand implements Command {
   constructor(
@@ -33,9 +42,7 @@ export class CollectCommand implements Command {
   ) {}
 
   execute(unit: Commandable): void {
-    const pos = this.treasure.getPosition();
-
-    unit.moveTo(pos.x, pos.y, () => {
+    unit.followTarget(this.treasure, () => {
       // Only collect if treasure hasn't been collected yet
       if (!this.treasure.isCollected()) {
         const value = this.treasure.collect();
