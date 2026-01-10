@@ -1,23 +1,44 @@
-# Phaser 3 TypeScript Game
+# Minion Exploration
 
-A Phaser 3 game template with TypeScript and Vite.
+A Pikmin-inspired game built with Phaser 3, TypeScript, and Vite.
+
+## Features
+
+- RTS-style unit selection and command system
+- Multi-select minions with Shift+Click
+- Command pattern architecture for scalable unit control
+- Comprehensive test suite with Vitest
+- Pre-commit hooks to ensure code quality
 
 ## Getting Started
 
 1. Install dependencies:
-   ```
+   ```bash
    npm install
    ```
 
 2. Run development server:
-   ```
+   ```bash
    npm run dev
    ```
 
 3. Build for production:
-   ```
+   ```bash
    npm run build
    ```
+
+4. Run tests:
+   ```bash
+   npm test
+   ```
+
+## Controls
+
+- **WASD/Arrow Keys** - Move player
+- **Shift** - Sprint (consumes stamina)
+- **Left Click** - Select minion
+- **Shift + Left Click** - Multi-select minions
+- **Right Click** - Command selected minions to move
 
 ## Project Structure
 
@@ -25,19 +46,24 @@ This project uses a **feature-oriented architecture** where code is organized by
 
 ```
 src/
-├── core/              # Core game configuration and shared utilities
+├── core/              # Core game systems and utilities
+│   ├── commands/      # Command pattern implementation
+│   ├── components/    # Reusable game components
 │   ├── config/        # Game configuration
-│   └── types/         # Shared TypeScript types
+│   └── types/         # Shared TypeScript interfaces
 ├── features/          # Feature modules (self-contained)
-│   └── example-feature/
-│       ├── scenes/    # Feature-specific scenes
-│       ├── objects/   # Feature-specific game objects
-│       └── assets/    # Feature-specific assets
+│   ├── level/         # Main gameplay scene
+│   ├── minions/       # Minion AI and behaviors
+│   └── player/        # Player character
 └── main.ts            # Application entry point
 ```
 
-See [src/README.md](src/README.md) for detailed information on creating new features.
+See [CLAUDE.md](CLAUDE.md) for detailed architectural guidelines.
 
-## Note
+## Technology Stack
 
-This project uses Phaser 3 (v3.90.0), as Phaser 4 has not been officially released yet.
+- **Phaser 3** - Game engine
+- **TypeScript** - Type-safe development
+- **Vite** - Fast build tooling
+- **Vitest** - Unit testing
+- **Husky** - Git hooks for quality checks
