@@ -1,5 +1,6 @@
 import { Commandable } from '../types/interfaces';
 import { Treasure } from '../../features/treasure';
+import { Enemy } from '../../features/enemies';
 
 /**
  * Base interface for all commands
@@ -47,6 +48,26 @@ export class CollectCommand implements Command {
       if (!this.treasure.isCollected()) {
         const value = this.treasure.collect();
         this.onCollect(value);
+      }
+    });
+  }
+}
+
+/**
+ * Command to attack an enemy
+ * Unit follows enemy, first to touch defeats it
+ */
+export class AttackCommand implements Command {
+  constructor(
+    private readonly enemy: Enemy,
+    private readonly onDefeat: () => void
+  ) {}
+
+  execute(unit: Commandable): void {
+    unit.followTarget(this.enemy, () => {
+      if (!this.enemy.isDefeated()) {
+        this.enemy.defeat();
+        this.onDefeat();
       }
     });
   }

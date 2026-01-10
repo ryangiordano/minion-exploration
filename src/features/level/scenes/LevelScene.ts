@@ -2,10 +2,11 @@ import Phaser from 'phaser';
 import { Player } from '../../player';
 import { Minion } from '../../minions';
 import { Treasure } from '../../treasure';
+import { Enemy } from '../../enemies';
 import { StaminaBar } from '../ui/StaminaBar';
 import { ScoreDisplay } from '../ui/ScoreDisplay';
 import { SelectionManager } from '../../../core/components';
-import { MoveCommand, CollectCommand } from '../../../core/commands';
+import { MoveCommand, CollectCommand, AttackCommand } from '../../../core/commands';
 
 // Command pulse colors by action type
 const PULSE_COLORS = {
@@ -20,6 +21,7 @@ export class LevelScene extends Phaser.Scene {
   private scoreDisplay?: ScoreDisplay;
   private minions: Minion[] = [];
   private treasures: Treasure[] = [];
+  private enemies: Enemy[] = [];
   private selectionManager = new SelectionManager();
   private whistleRadius = 100;
   private whistleCircle?: Phaser.GameObjects.Graphics;
@@ -58,6 +60,9 @@ export class LevelScene extends Phaser.Scene {
 
     // Spawn treasures around the world
     this.spawnTreasures(worldWidth, worldHeight);
+
+    // Spawn enemies around the world
+    this.spawnEnemies(worldWidth, worldHeight);
 
     // Spawn multiple test minions near the player
     const minionPositions = [
@@ -248,6 +253,34 @@ export class LevelScene extends Phaser.Scene {
             }
           });
           this.selectionManager.issueCommand(collectCommand);
+          event.stopPropagation();
+        }
+      });
+    }
+  }
+
+  private spawnEnemies(worldWidth: number, worldHeight: number): void {
+    // Spawn 5 enemies randomly around the world
+    for (let i = 0; i < 5; i++) {
+      const x = Phaser.Math.Between(100, worldWidth - 100);
+      const y = Phaser.Math.Between(100, worldHeight - 100);
+
+      const enemy = new Enemy(this, x, y);
+      this.enemies.push(enemy);
+
+      // Setup right-click to attack
+      enemy.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
+        if (pointer.rightButtonDown() && this.selectionManager.hasSelection()) {
+          // Show attack feedback
+          this.showClickPulse(enemy.x, enemy.y, PULSE_COLORS.attack);
+          const attackCommand = new AttackCommand(enemy, () => {
+            // Remove from enemies array
+            const index = this.enemies.indexOf(enemy);
+            if (index > -1) {
+              this.enemies.splice(index, 1);
+            }
+          });
+          this.selectionManager.issueCommand(attackCommand);
           event.stopPropagation();
         }
       });
