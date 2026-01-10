@@ -34,7 +34,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     // Create visual (simple circle for MVP)
     const graphics = scene.add.graphics();
     graphics.fillStyle(0x4a90e2, 1);
-    graphics.fillCircle(0, 0, 16);
+    graphics.fillCircle(16, 16, 16); // Draw at center of texture
     graphics.generateTexture('player', 32, 32);
     graphics.destroy();
 

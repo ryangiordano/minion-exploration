@@ -1,10 +1,13 @@
 import Phaser from 'phaser';
 import { Player } from '../../player';
+import { Minion } from '../../minions';
 import { StaminaBar } from '../ui/StaminaBar';
 
 export class LevelScene extends Phaser.Scene {
   private player?: Player;
   private staminaBar?: StaminaBar;
+  private minions: Minion[] = [];
+  private selectedMinion?: Minion;
 
   constructor() {
     super({ key: 'LevelScene' });
@@ -36,11 +39,36 @@ export class LevelScene extends Phaser.Scene {
     // Create UI
     this.staminaBar = new StaminaBar(this);
 
+    // Spawn a test minion near the player
+    const minion = new Minion(this, worldWidth / 2 + 100, worldHeight / 2 + 50);
+    this.minions.push(minion);
+
+    // Setup minion selection handling
+    this.minions.forEach(minion => {
+      minion.on('pointerdown', () => {
+        // Deselect all other minions
+        this.minions.forEach(m => m.deselect());
+        // Select this minion
+        minion.select();
+        this.selectedMinion = minion;
+      });
+    });
+
+    // Setup right-click to move selected minion
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (pointer.rightButtonDown() && this.selectedMinion) {
+        // Get world position (accounting for camera)
+        const worldX = pointer.worldX;
+        const worldY = pointer.worldY;
+        this.selectedMinion.moveTo(worldX, worldY);
+      }
+    });
+
     // Add instructions
     const instructions = this.add.text(10, 10,
-      'WASD/Arrows: Move | Hold Shift: Sprint',
+      'WASD/Arrows: Move | Shift: Sprint | Left-Click: Select Minion | Right-Click: Move Minion',
       {
-        fontSize: '14px',
+        fontSize: '12px',
         color: '#ffffff',
         backgroundColor: '#000000',
         padding: { x: 8, y: 4 }
@@ -57,6 +85,9 @@ export class LevelScene extends Phaser.Scene {
         this.staminaBar.update(this.player.getStaminaPercentage());
       }
     }
+
+    // Update all minions
+    this.minions.forEach(minion => minion.update());
   }
 
   private createReferenceGrid(worldWidth: number, worldHeight: number): void {
