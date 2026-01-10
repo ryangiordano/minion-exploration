@@ -28,10 +28,10 @@ export class LevelScene extends Phaser.Scene {
     // Create player in center of world
     this.player = new Player(this, worldWidth / 2, worldHeight / 2);
 
-    // Camera follows player with smooth delay
-    // Parameters: (target, roundPixels, lerpX, lerpY)
-    // Lower lerp values (0.05) = more delay/smoothness
-    this.cameras.main.startFollow(this.player, true, 0.05, 0.05);
+    // Camera follows player with deadzone (Pikmin-style)
+    // Camera doesn't move until player moves 100px from center
+    this.cameras.main.startFollow(this.player, true);
+    this.cameras.main.setDeadzone(100, 100);
 
     // Create UI
     this.staminaBar = new StaminaBar(this);
