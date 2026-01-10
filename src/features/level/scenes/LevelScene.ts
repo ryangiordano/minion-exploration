@@ -7,6 +7,13 @@ import { ScoreDisplay } from '../ui/ScoreDisplay';
 import { SelectionManager } from '../../../core/components';
 import { MoveCommand, CollectCommand } from '../../../core/commands';
 
+// Command pulse colors by action type
+const PULSE_COLORS = {
+  move: 0xffff00,     // Yellow - move to location
+  collect: 0x50c878,  // Green - collect treasure
+  attack: 0xff4444,   // Red - attack enemy (future)
+} as const;
+
 export class LevelScene extends Phaser.Scene {
   private player?: Player;
   private staminaBar?: StaminaBar;
@@ -81,6 +88,8 @@ export class LevelScene extends Phaser.Scene {
     // Setup background click handlers
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       if (pointer.rightButtonDown() && this.selectionManager.hasSelection()) {
+        // Show click feedback
+        this.showClickPulse(pointer.worldX, pointer.worldY);
         // Issue move command to all selected units
         const moveCommand = new MoveCommand(pointer.worldX, pointer.worldY);
         this.selectionManager.issueCommand(moveCommand);
@@ -195,6 +204,27 @@ export class LevelScene extends Phaser.Scene {
     this.whistleCircle.fillCircle(pointer.worldX, pointer.worldY, this.whistleRadius);
   }
 
+  private showClickPulse(x: number, y: number, color: number = PULSE_COLORS.move): void {
+    const circle = this.add.circle(x, y, 40, color, 0);
+    circle.setStrokeStyle(2, color, 0.8);
+
+    // Shrink and fade out
+    this.tweens.add({
+      targets: circle,
+      radius: 5,
+      alpha: 0,
+      duration: 300,
+      ease: 'Power2',
+      onUpdate: () => {
+        // Redraw the circle at new radius
+        circle.setRadius(circle.radius);
+      },
+      onComplete: () => {
+        circle.destroy();
+      }
+    });
+  }
+
   private spawnTreasures(worldWidth: number, worldHeight: number): void {
     // Spawn 10 treasures randomly around the world
     for (let i = 0; i < 10; i++) {
@@ -207,6 +237,8 @@ export class LevelScene extends Phaser.Scene {
       // Setup right-click to collect
       treasure.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
         if (pointer.rightButtonDown() && this.selectionManager.hasSelection()) {
+          // Show collect feedback
+          this.showClickPulse(treasure.x, treasure.y, PULSE_COLORS.collect);
           const collectCommand = new CollectCommand(treasure, (value) => {
             this.scoreDisplay?.addScore(value);
             // Remove from treasures array
