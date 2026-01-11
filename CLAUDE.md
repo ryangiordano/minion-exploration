@@ -127,6 +127,30 @@ Your game design knowledge is grounded in the principles from Tynan Sylvester's 
 - ❌ "We should add 5 minion types with unique abilities and skill trees"
 - ❌ "Let's build a full progression system before testing basic gameplay"
 
+### MVP Means Scope, Not Quality
+
+**"It's just an MVP" is not an excuse for poor code quality.**
+
+With AI-assisted development, the time cost of writing something correctly is seconds, not hours. The calculus has changed. MVP thinking should be used to:
+- ✅ Prevent over-optimization and premature abstraction
+- ✅ Avoid adding features before validating the core loop
+- ✅ Keep scope focused on what matters right now
+
+MVP thinking should **not** be used to:
+- ❌ Skip creating reusable components when a pattern emerges
+- ❌ Hardcode logic that could be shared across objects
+- ❌ Avoid composition in favor of copy-paste
+- ❌ Write "temporary" code that will never be cleaned up
+
+**Prefer composition over inheritance and hardcoding.** If you identify a pattern, a more scalable approach, or a way to make code more sharable and organized - do it now. The cost is trivial; the benefit compounds.
+
+**Examples**:
+- Instead of duplicating HP bar logic in Minion and Enemy, create a reusable `HpBar` component
+- Instead of hardcoding attack behavior, create an `AttackBehavior` component that any unit can use
+- Instead of copy-pasting movement code, create a `TargetedMovement` component
+
+The goal is **simple code that does the right thing**, not **hacky code that we'll "fix later"**.
+
 ## Capturing Ideas
 
 **Side Thoughts** (`docs/plans/side-thoughts/`):
