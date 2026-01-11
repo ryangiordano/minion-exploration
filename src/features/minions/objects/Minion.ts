@@ -3,7 +3,8 @@ import { TargetedMovement } from '../../../core/components/TargetedMovement';
 import { AttackBehavior } from '../../../core/components/AttackBehavior';
 import { HpBar } from '../../../core/components/HpBar';
 import { CombatManager } from '../../../core/components/CombatManager';
-import { Unit, Followable, Combatable, Attacker, AttackConfig } from '../../../core/types/interfaces';
+import { ThreatTracker } from '../../../core/components/ThreatTracker';
+import { Unit, Followable, Combatable, Attacker, AttackConfig, AggroCapable } from '../../../core/types/interfaces';
 
 const MINION_RADIUS = 10;
 
@@ -16,12 +17,16 @@ const DEFAULT_ATTACK: AttackConfig = {
 
 const DEFAULT_MAX_HP = 3;
 
+const DEFAULT_AGGRO_RADIUS = 100;
+
 export interface MinionConfig {
   maxHp?: number;
   combatManager?: CombatManager;
+  aggroRadius?: number;
+  enableAutoAggro?: boolean;
 }
 
-export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attacker, Combatable {
+export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attacker, Combatable, AggroCapable {
   private selected = false;
   private selectionCircle?: Phaser.GameObjects.Graphics;
   private movement!: TargetedMovement;
@@ -42,6 +47,12 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
   private onCombatTargetDefeated?: () => void;
   private combatManager?: CombatManager;
 
+  // Aggro state
+  private threatTracker?: ThreatTracker;
+  private nearbyEnemies: Combatable[] = [];
+  private autoAggroEnabled: boolean;
+  private hasActiveCommand = false; // True when executing a player command
+
   // Death callback
   private onDeathCallback?: () => void;
 
@@ -54,6 +65,17 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
 
     // Store combat manager reference
     this.combatManager = config.combatManager;
+
+    // Setup auto-aggro
+    this.autoAggroEnabled = config.enableAutoAggro !== false;
+    if (this.autoAggroEnabled) {
+      this.threatTracker = new ThreatTracker({
+        aggroRadius: config.aggroRadius ?? DEFAULT_AGGRO_RADIUS,
+        baseThreat: 10,
+        damageMultiplier: 5,
+        decayRate: 2
+      });
+    }
 
     // Add to scene
     scene.add.existing(this);
@@ -132,6 +154,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
     this.exitCombat(); // Cancel combat if moving
     this.followingTarget = undefined;
     this.persistentFollow = false;
+    this.hasActiveCommand = true; // Player command overrides auto-aggro
     this.arrivalCallback = onArrival;
     this.movement.moveTo(x, y);
   }
@@ -141,6 +164,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
     this.followingTarget = target;
     this.arrivalCallback = onArrival;
     this.persistentFollow = persistent;
+    this.hasActiveCommand = true; // Player command overrides auto-aggro
     this.followAngleOffset = Math.random() * Math.PI * 2;
     this.movement.moveTo(target.x, target.y);
   }
@@ -153,6 +177,17 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
 
   public getRadius(): number {
     return MINION_RADIUS;
+  }
+
+  public getAggroRadius(): number {
+    return this.threatTracker?.getAggroRadius() ?? 0;
+  }
+
+  /**
+   * Set the list of potential targets for auto-aggro
+   */
+  public setNearbyEnemies(enemies: Combatable[]): void {
+    this.nearbyEnemies = enemies;
   }
 
   // Combatable interface
@@ -274,6 +309,16 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
     // Update HP bar position
     this.updateHpBar();
 
+    // Auto-aggro: check for nearby enemies when truly idle (no active command)
+    if (this.autoAggroEnabled && !this.hasActiveCommand && !this.isInCombat() && this.threatTracker) {
+      this.threatTracker.update(delta, this.x, this.y, this.nearbyEnemies);
+      const highestThreat = this.threatTracker.getHighestThreat();
+      if (highestThreat) {
+        // Auto-engage the threat
+        this.enterCombat(highestThreat, () => {});
+      }
+    }
+
     // If in combat, update attack behavior and maintain position
     if (this.isInCombat() && this.combatTarget) {
       // Stay at target's edge
@@ -312,6 +357,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
         // Only clear follow target if not persistent
         if (!this.persistentFollow) {
           this.followingTarget = undefined;
+          this.hasActiveCommand = false; // Command complete, allow auto-aggro
         }
         if (callback) callback();
         return;
@@ -320,6 +366,11 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
 
     // Update movement component
     const arrived = this.movement.update();
+
+    // Clear active command when movement completes
+    if (arrived) {
+      this.hasActiveCommand = false;
+    }
 
     // Fire arrival callback if we just arrived
     // For follow targets this is a fallback if edge detection didn't trigger

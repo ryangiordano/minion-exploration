@@ -1,8 +1,11 @@
 import Phaser from 'phaser';
-import { Combatable, AttackConfig } from '../../../core/types/interfaces';
-import { HpBar, AttackBehavior } from '../../../core/components';
+import { Combatable, AttackConfig, AggroCapable } from '../../../core/types/interfaces';
+import { HpBar, AttackBehavior, ThreatTracker, TargetedMovement } from '../../../core/components';
 
 const ENEMY_RADIUS = 16;
+const DEFAULT_AGGRO_RADIUS = 150;
+const DEFAULT_ATTACK_RANGE = 5; // Must be within this distance (beyond touching) to attack
+const DEFAULT_SPEED = 80;
 
 // Default enemy attack stats (slower than minions)
 const DEFAULT_ATTACK: AttackConfig = {
@@ -15,30 +18,55 @@ export interface EnemyConfig {
   maxHp?: number;
   damage?: number;
   attackCooldown?: number;
+  aggroRadius?: number;
+  attackRange?: number;
+  speed?: number;
 }
 
-export class Enemy extends Phaser.GameObjects.Container implements Combatable {
+export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, AggroCapable {
   private hp: number;
   private maxHp: number;
   private defeated = false;
   private hpBar: HpBar;
-  private bodyCircle?: Phaser.GameObjects.Arc;
   private attackBehavior: AttackBehavior;
-  private attackers: Set<Combatable> = new Set();
+  private threatTracker: ThreatTracker;
+  private movement: TargetedMovement;
+  private nearbyTargets: Combatable[] = [];
+  private attackRange: number;
+  private followAngleOffset = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number, config: EnemyConfig = {}) {
-    super(scene, x, y);
+    super(scene, x, y, '');
 
     this.maxHp = config.maxHp ?? 3;
     this.hp = this.maxHp;
+    this.attackRange = config.attackRange ?? DEFAULT_ATTACK_RANGE;
 
-    // Add to scene
+    // Add to scene with physics
     scene.add.existing(this);
+    scene.physics.add.existing(this);
 
-    // Create visual (red circle)
-    this.bodyCircle = scene.add.circle(0, 0, ENEMY_RADIUS, 0xff4444);
-    this.bodyCircle.setStrokeStyle(2, 0xaa0000);
-    this.add(this.bodyCircle);
+    // Create visual (red circle texture)
+    const graphics = scene.add.graphics();
+    graphics.fillStyle(0xff4444, 1);
+    graphics.fillCircle(ENEMY_RADIUS, ENEMY_RADIUS, ENEMY_RADIUS);
+    graphics.lineStyle(2, 0xaa0000);
+    graphics.strokeCircle(ENEMY_RADIUS, ENEMY_RADIUS, ENEMY_RADIUS);
+    graphics.generateTexture('enemy', ENEMY_RADIUS * 2, ENEMY_RADIUS * 2);
+    graphics.destroy();
+
+    this.setTexture('enemy');
+
+    // Setup physics
+    this.setCollideWorldBounds(true);
+
+    // Setup movement component
+    this.movement = new TargetedMovement(this, {
+      speed: config.speed ?? DEFAULT_SPEED,
+      arrivalDistance: 5,
+      slowdownDistance: 40,
+      minSpeedScale: 0.3
+    });
 
     // Create HP bar component (auto-hides when full)
     this.hpBar = new HpBar(scene, {
@@ -48,7 +76,6 @@ export class Enemy extends Phaser.GameObjects.Container implements Combatable {
     this.updateHpBar();
 
     // Make interactive for click detection
-    this.setSize(ENEMY_RADIUS * 2, ENEMY_RADIUS * 2);
     this.setInteractive({ useHandCursor: true });
 
     // Setup attack behavior for fighting back
@@ -64,10 +91,33 @@ export class Enemy extends Phaser.GameObjects.Container implements Combatable {
       this.showAttackEffect();
     });
 
-    // When current target dies, find next attacker
-    this.attackBehavior.onTargetDefeated(() => {
-      this.attackers.delete(this.attackBehavior.getTarget()!);
+    // When current target dies, find next highest threat
+    this.attackBehavior.onTargetDefeated((target) => {
+      this.threatTracker.clearThreat(target);
       this.retarget();
+    });
+
+    // Setup threat tracker for aggro detection
+    this.threatTracker = new ThreatTracker({
+      aggroRadius: config.aggroRadius ?? DEFAULT_AGGRO_RADIUS,
+      baseThreat: 10,
+      damageMultiplier: 5,
+      decayRate: 2
+    });
+
+    // When new threat detected, start pursuing if idle
+    this.threatTracker.onNewThreat((target) => {
+      if (!this.attackBehavior.isEngaged()) {
+        this.attackBehavior.engage(target);
+        this.followAngleOffset = Math.random() * Math.PI * 2;
+      }
+    });
+
+    // When threat cleared and it was our target, retarget
+    this.threatTracker.onThreatCleared((target) => {
+      if (this.attackBehavior.getTarget() === target) {
+        this.retarget();
+      }
     });
   }
 
@@ -77,6 +127,10 @@ export class Enemy extends Phaser.GameObjects.Container implements Combatable {
 
   public getRadius(): number {
     return ENEMY_RADIUS;
+  }
+
+  public getAggroRadius(): number {
+    return this.threatTracker.getAggroRadius();
   }
 
   public getCurrentHp(): number {
@@ -93,15 +147,13 @@ export class Enemy extends Phaser.GameObjects.Container implements Combatable {
     this.hp = Math.max(0, this.hp - amount);
     this.updateHpBar();
 
-    // Visual feedback: flash white
-    if (this.bodyCircle) {
-      this.scene.tweens.add({
-        targets: this.bodyCircle,
-        alpha: 0.5,
-        duration: 50,
-        yoyo: true,
-      });
-    }
+    // Visual feedback: flash
+    this.scene.tweens.add({
+      targets: this,
+      alpha: 0.5,
+      duration: 50,
+      yoyo: true,
+    });
 
     if (this.hp <= 0) {
       this.defeat();
@@ -113,13 +165,23 @@ export class Enemy extends Phaser.GameObjects.Container implements Combatable {
   }
 
   /**
-   * Register an attacker - enemy will fight back
+   * Set the list of potential targets for aggro detection
+   */
+  public setNearbyTargets(targets: Combatable[]): void {
+    this.nearbyTargets = targets;
+  }
+
+  /**
+   * Register an attacker - adds high threat for direct combat
    */
   public addAttacker(attacker: Combatable): void {
-    this.attackers.add(attacker);
-    // If not currently fighting, start attacking this one
+    // Add high threat for direct attack command
+    this.threatTracker.addThreat(attacker, 50);
+
+    // If not currently fighting, start attacking
     if (!this.attackBehavior.isEngaged()) {
       this.attackBehavior.engage(attacker);
+      this.followAngleOffset = Math.random() * Math.PI * 2;
     }
   }
 
@@ -127,7 +189,8 @@ export class Enemy extends Phaser.GameObjects.Container implements Combatable {
    * Remove an attacker (e.g., when they leave combat)
    */
   public removeAttacker(attacker: Combatable): void {
-    this.attackers.delete(attacker);
+    this.threatTracker.clearThreat(attacker);
+
     // If we were attacking them, find new target
     if (this.attackBehavior.getTarget() === attacker) {
       this.retarget();
@@ -135,45 +198,81 @@ export class Enemy extends Phaser.GameObjects.Container implements Combatable {
   }
 
   /**
-   * Update - call each frame to process attacks
+   * Update - call each frame to process threat detection, movement, and attacks
    */
   public update(delta: number): void {
     if (this.defeated) return;
 
-    this.attackBehavior.update(delta);
+    // Update HP bar position
+    this.updateHpBar();
+
+    // Update threat tracker with nearby targets
+    this.threatTracker.update(delta, this.x, this.y, this.nearbyTargets);
+
+    // Re-evaluate target based on highest threat
+    const highestThreat = this.threatTracker.getHighestThreat();
+    const currentTarget = this.attackBehavior.getTarget();
+
+    if (highestThreat && highestThreat !== currentTarget) {
+      // Switch to higher threat target
+      this.attackBehavior.engage(highestThreat);
+      this.followAngleOffset = Math.random() * Math.PI * 2;
+    } else if (!highestThreat && currentTarget) {
+      // No threats left, disengage and stop
+      this.attackBehavior.disengage();
+      this.movement.stop();
+    }
+
+    // If we have a target, move toward it and attack when in range
+    const target = this.attackBehavior.getTarget();
+    if (target && !target.isDefeated()) {
+      const distance = Phaser.Math.Distance.Between(this.x, this.y, target.x, target.y);
+      const touchDistance = ENEMY_RADIUS + target.getRadius();
+
+      if (distance <= touchDistance + this.attackRange) {
+        // In attack range - stop moving and attack
+        this.movement.stop();
+        this.attackBehavior.update(delta);
+      } else {
+        // Move toward target's perimeter
+        const perimeterDistance = target.getRadius() + ENEMY_RADIUS;
+        const targetX = target.x + Math.cos(this.followAngleOffset) * perimeterDistance;
+        const targetY = target.y + Math.sin(this.followAngleOffset) * perimeterDistance;
+        this.movement.moveTo(targetX, targetY);
+        this.movement.update();
+      }
+    }
   }
 
   private retarget(): void {
     this.attackBehavior.disengage();
 
-    // Find next attacker that isn't defeated
-    for (const attacker of this.attackers) {
-      if (!attacker.isDefeated()) {
-        this.attackBehavior.engage(attacker);
-        return;
-      }
+    // Find highest threat target
+    const highestThreat = this.threatTracker.getHighestThreat();
+    if (highestThreat && !highestThreat.isDefeated()) {
+      this.attackBehavior.engage(highestThreat);
+      this.followAngleOffset = Math.random() * Math.PI * 2;
+    } else {
+      this.movement.stop();
     }
-    // No valid targets, clear attackers set
-    this.attackers.clear();
   }
 
   private showAttackEffect(): void {
     // Quick pulse effect
-    if (this.bodyCircle) {
-      this.scene.tweens.add({
-        targets: this.bodyCircle,
-        scaleX: 1.2,
-        scaleY: 1.2,
-        duration: 50,
-        yoyo: true,
-      });
-    }
+    this.scene.tweens.add({
+      targets: this,
+      scaleX: 1.2,
+      scaleY: 1.2,
+      duration: 50,
+      yoyo: true,
+    });
   }
 
   public defeat(): void {
     if (this.defeated) return;
 
     this.defeated = true;
+    this.movement.stop();
 
     // Death animation
     this.scene.tweens.add({

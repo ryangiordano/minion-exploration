@@ -116,11 +116,21 @@ export class LevelScene extends Phaser.Scene {
       }
     }
 
-    // Update all minions with delta time for combat cooldowns
-    this.minions.forEach(minion => minion.update(delta));
+    // Get active (non-defeated) entities for aggro detection
+    const activeMinions = this.minions.filter(m => !m.isDefeated());
+    const activeEnemies = this.enemies.filter(e => !e.isDefeated());
 
-    // Update all enemies (for fighting back)
-    this.enemies.forEach(enemy => enemy.update(delta));
+    // Update all minions with delta time for combat cooldowns
+    this.minions.forEach(minion => {
+      minion.setNearbyEnemies(activeEnemies);
+      minion.update(delta);
+    });
+
+    // Update all enemies (for fighting back and aggro detection)
+    this.enemies.forEach(enemy => {
+      enemy.setNearbyTargets(activeMinions);
+      enemy.update(delta);
+    });
 
     // Update whistle selection animation
     this.whistleSelection?.update(delta);

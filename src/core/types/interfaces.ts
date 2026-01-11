@@ -62,3 +62,10 @@ export interface CombatableWithAttackers extends Combatable {
   addAttacker(attacker: Combatable): void;
   removeAttacker(attacker: Combatable): void;
 }
+
+/**
+ * Interface for entities that can detect and track threats
+ */
+export interface AggroCapable {
+  getAggroRadius(): number;
+}
