@@ -129,8 +129,8 @@ export class LevelScene extends Phaser.Scene {
       }
     }
 
-    // Update all minions
-    this.minions.forEach(minion => minion.update());
+    // Update all minions with delta time for combat cooldowns
+    this.minions.forEach(minion => minion.update(delta));
   }
 
   private createReferenceGrid(worldWidth: number, worldHeight: number): void {
@@ -265,7 +265,7 @@ export class LevelScene extends Phaser.Scene {
       const x = Phaser.Math.Between(100, worldWidth - 100);
       const y = Phaser.Math.Between(100, worldHeight - 100);
 
-      const enemy = new Enemy(this, x, y);
+      const enemy = new Enemy(this, x, y, { maxHp: 10 });
       this.enemies.push(enemy);
 
       // Setup right-click to attack

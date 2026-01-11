@@ -28,3 +28,29 @@ export interface Commandable {
  * Combined interface for units that can be selected and commanded (like minions)
  */
 export interface Unit extends Selectable, Commandable {}
+
+/**
+ * Configuration for an attack behavior
+ */
+export interface AttackConfig {
+  damage: number;
+  cooldownMs: number;
+  effectType?: string;  // 'melee', 'ranged', etc. for visual feedback
+}
+
+/**
+ * Interface for entities that have health and can take damage
+ */
+export interface Combatable extends Followable {
+  getCurrentHp(): number;
+  getMaxHp(): number;
+  takeDamage(amount: number): void;
+  isDefeated(): boolean;
+}
+
+/**
+ * Interface for entities that can attack
+ */
+export interface Attacker {
+  getPrimaryAttack(): AttackConfig;
+}

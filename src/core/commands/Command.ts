@@ -54,8 +54,15 @@ export class CollectCommand implements Command {
 }
 
 /**
+ * Interface for units that can enter combat mode
+ */
+interface CombatCapable {
+  enterCombat(target: Enemy, onDefeated: () => void): void;
+}
+
+/**
  * Command to attack an enemy
- * Unit follows enemy, first to touch defeats it
+ * Unit follows enemy, then enters continuous combat mode
  */
 export class AttackCommand implements Command {
   constructor(
@@ -65,9 +72,9 @@ export class AttackCommand implements Command {
 
   execute(unit: Commandable): void {
     unit.followTarget(this.enemy, () => {
-      if (!this.enemy.isDefeated()) {
-        this.enemy.defeat();
-        this.onDefeat();
+      // On arrival, enter combat mode instead of instant defeat
+      if ('enterCombat' in unit && typeof (unit as CombatCapable).enterCombat === 'function') {
+        (unit as CombatCapable).enterCombat(this.enemy, this.onDefeat);
       }
     });
   }
