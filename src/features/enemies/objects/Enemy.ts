@@ -6,11 +6,11 @@ const ENEMY_RADIUS = 16;
 const DEFAULT_AGGRO_RADIUS = 150;
 const DEFAULT_ATTACK_RANGE = 5; // Must be within this distance (beyond touching) to attack
 const DEFAULT_SPEED = 80;
-const DEFAULT_ATTACK_COOLDOWN = 1000;
+const DEFAULT_ATTACK_COOLDOWN = 1500;  // Slower attacks
 
 // Default enemy base stats at level 1
 const DEFAULT_BASE_STATS = {
-  maxHp: 3,
+  maxHp: 2,        // Less tanky
   maxMp: 0,        // Enemies don't use MP (yet)
   strength: 1,     // Base damage
   dexterity: 1,

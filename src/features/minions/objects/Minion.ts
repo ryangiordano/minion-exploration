@@ -3,7 +3,7 @@ import { TargetedMovement } from '../../../core/components/TargetedMovement';
 import { AttackBehavior } from '../../../core/components/AttackBehavior';
 import { CombatManager } from '../../../core/components/CombatManager';
 import { ThreatTracker } from '../../../core/components/ThreatTracker';
-import { LevelingSystem, UnitStatBars, defaultXpCurve, CombatXpTracker } from '../../../core/components';
+import { LevelingSystem, UnitStatBars, defaultXpCurve, CombatXpTracker, LevelUpEffect, FloatingText } from '../../../core/components';
 import { Unit, Followable, Combatable, Attacker, AttackConfig, AggroCapable } from '../../../core/types/interfaces';
 
 const MINION_RADIUS = 10;
@@ -68,6 +68,10 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
   // Death callback
   private onDeathCallback?: () => void;
 
+  // Level up effect
+  private levelUpEffect: LevelUpEffect;
+  private floatingText: FloatingText;
+
   constructor(scene: Phaser.Scene, x: number, y: number, config: MinionConfig = {}) {
     super(scene, x, y, '');
 
@@ -83,6 +87,10 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
     this.hp = stats.maxHp;
     this.mp = stats.maxMp;
 
+    // Create level up effects
+    this.levelUpEffect = new LevelUpEffect(scene);
+    this.floatingText = new FloatingText(scene);
+
     // Handle level ups - increase max HP/MP and heal the difference
     this.leveling.onLevelUp((_newLevel, newStats) => {
       const oldMaxHp = stats.maxHp;
@@ -90,6 +98,9 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
       // Heal the amount gained
       this.hp = Math.min(this.hp + (newStats.maxHp - oldMaxHp), newStats.maxHp);
       this.mp = Math.min(this.mp + (newStats.maxMp - oldMaxMp), newStats.maxMp);
+      // Play level up effects
+      this.levelUpEffect.play(this.x, this.y);
+      this.floatingText.showLevelUp(this.x, this.y);
     });
 
     // Store combat manager and XP tracker references
@@ -159,9 +170,9 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
 
     // Create stat bars (HP, MP, XP)
     this.statBars = new UnitStatBars(scene, {
-      width: MINION_RADIUS * 2,
-      offsetY: -MINION_RADIUS - 12,
-      barHeight: 3,
+      width: MINION_RADIUS * 2.5,
+      offsetY: -MINION_RADIUS - 14,
+      barHeight: 4,
     });
   }
 
@@ -486,6 +497,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
   destroy(fromScene?: boolean): void {
     this.selectionCircle?.destroy();
     this.statBars.destroy();
+    this.levelUpEffect.destroy();
     super.destroy(fromScene);
   }
 }
