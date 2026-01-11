@@ -2,11 +2,12 @@ import Phaser from 'phaser';
 import { Player } from '../../player';
 import { Minion } from '../../minions';
 import { Treasure } from '../../treasure';
-import { Enemy } from '../../enemies';
+import { Enemy, TargetDummy } from '../../enemies';
 import { StaminaBar } from '../ui/StaminaBar';
 import { ScoreDisplay } from '../ui/ScoreDisplay';
 import { SelectionManager, WhistleSelection, CombatManager, CombatXpTracker } from '../../../core/components';
 import { MoveCommand, CollectCommand, AttackCommand, FollowCommand } from '../../../core/commands';
+import { VitalityGem, KnockbackGem, HealPulseGem, RangedAttackGem } from '../../../core/abilities';
 
 // Command pulse colors by action type
 const PULSE_COLORS = {
@@ -22,6 +23,7 @@ export class LevelScene extends Phaser.Scene {
   private minions: Minion[] = [];
   private treasures: Treasure[] = [];
   private enemies: Enemy[] = [];
+  private targetDummies: TargetDummy[] = [];
   private selectionManager = new SelectionManager();
   private combatManager = new CombatManager();
   private xpTracker = new CombatXpTracker({ baseXpPerKill: 10 });
@@ -64,15 +66,30 @@ export class LevelScene extends Phaser.Scene {
     // Spawn enemies around the world
     this.spawnEnemies(worldWidth, worldHeight);
 
+    // Spawn a target dummy near the player for ability testing
+    this.spawnTargetDummy(worldWidth / 2 + 200, worldHeight / 2);
+
     // Spawn multiple test minions near the player
     const minionPositions = [
       { x: worldWidth / 2 + 100, y: worldHeight / 2 + 50 },
       { x: worldWidth / 2 - 100, y: worldHeight / 2 + 50 },
-      { x: worldWidth / 2, y: worldHeight / 2 + 100 }
+      { x: worldWidth / 2, y: worldHeight / 2 + 100 },
+      { x: worldWidth / 2, y: worldHeight / 2 - 100 }
     ];
 
-    minionPositions.forEach(pos => {
-      this.spawnMinion(pos.x, pos.y);
+    // Spawn minions with different gems for testing
+    const testGems = [
+      new KnockbackGem(),      // First minion (right): knockback attacks
+      new HealPulseGem(),      // Second minion (left): auto-heals allies
+      new VitalityGem(),       // Third minion (bottom): +2 max HP
+      new RangedAttackGem(),   // Fourth minion (top): ranged projectiles
+    ];
+
+    minionPositions.forEach((pos, index) => {
+      const minion = this.spawnMinion(pos.x, pos.y);
+      if (testGems[index]) {
+        minion.equipGem(testGems[index]);
+      }
     });
 
     // Setup background click handlers
@@ -124,6 +141,7 @@ export class LevelScene extends Phaser.Scene {
     // Update all minions with delta time for combat cooldowns
     this.minions.forEach(minion => {
       minion.setNearbyEnemies(activeEnemies);
+      minion.setNearbyAllies(activeMinions);
       minion.update(delta);
     });
 
@@ -342,5 +360,30 @@ export class LevelScene extends Phaser.Scene {
     });
 
     return enemy;
+  }
+
+  private spawnTargetDummy(x: number, y: number): TargetDummy {
+    const dummy = new TargetDummy(this, x, y, { maxHp: 100 });
+    this.targetDummies.push(dummy);
+
+    // Handle death - remove from array
+    dummy.onDeath((deadDummy) => {
+      const index = this.targetDummies.indexOf(deadDummy);
+      if (index > -1) {
+        this.targetDummies.splice(index, 1);
+      }
+    });
+
+    // Setup right-click to attack (same as enemies)
+    dummy.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
+      if (pointer.rightButtonDown() && this.selectionManager.hasSelection()) {
+        this.showClickPulse(dummy.x, dummy.y, PULSE_COLORS.attack);
+        const attackCommand = new AttackCommand(dummy, () => {});
+        this.selectionManager.issueCommand(attackCommand);
+        event.stopPropagation();
+      }
+    });
+
+    return dummy;
   }
 }

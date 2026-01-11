@@ -1,3 +1,5 @@
+import { StatModifier } from '../abilities/types';
+
 /**
  * Stats that can be tracked and scaled by the leveling system.
  * All stats are optional - only include what the unit uses.
@@ -150,5 +152,39 @@ export class LevelingSystem {
       magic: baseStats.magic + (growthPerLevel.magic ?? 0) * levelsGained,
       resilience: baseStats.resilience + (growthPerLevel.resilience ?? 0) * levelsGained,
     };
+  }
+
+  /**
+   * Get stats with external modifiers applied (e.g., from equipped gems)
+   * @param modifiers Array of stat modifiers to apply
+   * @returns Stats with all modifiers applied (flat first, then percent)
+   */
+  public getEffectiveStats(modifiers: StatModifier[]): UnitStats {
+    // Start with base calculated stats
+    const stats = { ...this.cachedStats };
+
+    // Separate flat and percent modifiers
+    const flatMods = modifiers.filter(m => m.type === 'flat');
+    const percentMods = modifiers.filter(m => m.type === 'percent');
+
+    // Apply flat modifiers first
+    for (const mod of flatMods) {
+      stats[mod.stat] += mod.value;
+    }
+
+    // Then apply percent modifiers
+    for (const mod of percentMods) {
+      stats[mod.stat] *= (1 + mod.value / 100);
+    }
+
+    // Floor all values
+    stats.maxHp = Math.floor(stats.maxHp);
+    stats.maxMp = Math.floor(stats.maxMp);
+    stats.strength = Math.floor(stats.strength);
+    stats.dexterity = Math.floor(stats.dexterity);
+    stats.magic = Math.floor(stats.magic);
+    stats.resilience = Math.floor(stats.resilience);
+
+    return stats;
   }
 }

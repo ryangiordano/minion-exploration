@@ -57,13 +57,13 @@ export class LevelUpEffect {
   public play(x: number, y: number): void {
     this.particles.setPosition(x, y);
 
-    // Emit particles with random colors
+    // Set tint to a random color from our palette for the burst
     const colors = this.config.colors;
-    for (let i = 0; i < this.config.particleCount; i++) {
-      const color = colors[Math.floor(Math.random() * colors.length)];
-      this.particles.setParticleTint(color);
-      this.particles.emitParticle(1);
-    }
+    const randomColor = colors[Math.floor(Math.random() * colors.length)];
+    this.particles.particleTint = randomColor;
+
+    // Emit all particles at once
+    this.particles.emitParticle(this.config.particleCount);
 
     // Create shrinking circle effect
     this.createShrinkingCircle(x, y);

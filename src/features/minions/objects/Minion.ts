@@ -1,10 +1,11 @@
 import Phaser from 'phaser';
 import { TargetedMovement } from '../../../core/components/TargetedMovement';
-import { AttackBehavior } from '../../../core/components/AttackBehavior';
+import { AttackBehavior, AttackUpdateContext } from '../../../core/components/AttackBehavior';
 import { CombatManager } from '../../../core/components/CombatManager';
 import { ThreatTracker } from '../../../core/components/ThreatTracker';
 import { LevelingSystem, UnitStatBars, defaultXpCurve, CombatXpTracker, LevelUpEffect, FloatingText } from '../../../core/components';
 import { Unit, Followable, Combatable, Attacker, AttackConfig, AggroCapable } from '../../../core/types/interfaces';
+import { AbilitySystem, GemOwner, AbilityGem } from '../../../core/abilities';
 
 const MINION_RADIUS = 10;
 
@@ -36,7 +37,7 @@ export interface MinionConfig {
   enableAutoAggro?: boolean;
 }
 
-export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attacker, Combatable, AggroCapable {
+export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attacker, Combatable, AggroCapable, GemOwner {
   private selected = false;
   private selectionCircle?: Phaser.GameObjects.Graphics;
   private movement!: TargetedMovement;
@@ -72,6 +73,10 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
   private levelUpEffect: LevelUpEffect;
   private floatingText: FloatingText;
 
+  // Ability system
+  private abilitySystem: AbilitySystem;
+  private nearbyAllies: Minion[] = [];
+
   constructor(scene: Phaser.Scene, x: number, y: number, config: MinionConfig = {}) {
     super(scene, x, y, '');
 
@@ -82,8 +87,11 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
       xpCurve: defaultXpCurve,
     });
 
-    // Initialize HP and MP from base stats
-    const stats = this.leveling.getStats();
+    // Initialize ability system (before HP/MP init so modifiers apply)
+    this.abilitySystem = new AbilitySystem(this, { maxSlots: 1 });
+
+    // Initialize HP and MP from effective stats (includes gem modifiers)
+    const stats = this.getEffectiveStats();
     this.hp = stats.maxHp;
     this.mp = stats.maxMp;
 
@@ -92,12 +100,12 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
     this.floatingText = new FloatingText(scene);
 
     // Handle level ups - increase max HP/MP and heal the difference
-    this.leveling.onLevelUp((_newLevel, newStats) => {
-      const oldMaxHp = stats.maxHp;
-      const oldMaxMp = stats.maxMp;
+    this.leveling.onLevelUp(() => {
+      const oldStats = this.getEffectiveStats();
+      const newStats = this.getEffectiveStats(); // Recalculated after level up
       // Heal the amount gained
-      this.hp = Math.min(this.hp + (newStats.maxHp - oldMaxHp), newStats.maxHp);
-      this.mp = Math.min(this.mp + (newStats.maxMp - oldMaxMp), newStats.maxMp);
+      this.hp = Math.min(this.hp + (newStats.maxHp - oldStats.maxHp), newStats.maxHp);
+      this.mp = Math.min(this.mp + (newStats.maxMp - oldStats.maxMp), newStats.maxMp);
       // Play level up effects
       this.levelUpEffect.play(this.x, this.y);
       this.floatingText.showLevelUp(this.x, this.y);
@@ -147,9 +155,11 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
       defaultAttack: this.getPrimaryAttack()
     });
 
-    // Visual feedback when attacking and record participation for XP
-    this.attackBehavior.onAttack((target) => {
+    // Visual feedback when attacking, trigger ability hooks, and record participation for XP
+    this.attackBehavior.onAttack((target, damage) => {
       this.showAttackEffect(target);
+      // Trigger ability system hooks (e.g., knockback)
+      this.abilitySystem.onAttackHit(target, damage, scene);
       // Record combat participation for XP distribution
       this.xpTracker?.recordParticipation(this, target);
     });
@@ -176,13 +186,29 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
     });
   }
 
+  /**
+   * Get stats with all modifiers applied (level + gems)
+   */
+  private getEffectiveStats() {
+    return this.leveling.getEffectiveStats(this.abilitySystem.getStatModifiers());
+  }
+
   public getPrimaryAttack(): AttackConfig {
-    const stats = this.leveling.getStats();
+    const stats = this.getEffectiveStats();
     return {
-      damage: Math.floor(stats.strength),
+      damage: Math.max(1, Math.floor(stats.strength)), // Minimum 1 damage
       cooldownMs: DEFAULT_ATTACK_COOLDOWN,
       effectType: 'melee'
     };
+  }
+
+  /**
+   * Get the effective attack config with gem modifiers applied
+   */
+  public getEffectiveAttack(): AttackConfig {
+    const base = this.getPrimaryAttack();
+    const modifiers = this.abilitySystem.getAttackModifiers();
+    return { ...base, ...modifiers };
   }
 
   public select(): void {
@@ -245,7 +271,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
   }
 
   public getMaxHp(): number {
-    return this.leveling.getStats().maxHp;
+    return this.getEffectiveStats().maxHp;
   }
 
   public takeDamage(amount: number): void {
@@ -269,6 +295,83 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
 
   public isDefeated(): boolean {
     return this.defeated;
+  }
+
+  // GemOwner interface methods
+
+  public getCurrentMp(): number {
+    return this.mp;
+  }
+
+  public getMaxMp(): number {
+    return this.getEffectiveStats().maxMp;
+  }
+
+  public spendMp(amount: number): boolean {
+    if (this.mp < amount) return false;
+    this.mp -= amount;
+    this.updateStatBars();
+    return true;
+  }
+
+  public heal(amount: number): void {
+    if (this.defeated) return;
+    const maxHp = this.getMaxHp();
+    const oldHp = this.hp;
+    this.hp = Math.min(maxHp, this.hp + amount);
+
+    if (this.hp > oldHp) {
+      this.updateStatBars();
+      // Visual feedback: brief green tint
+      this.scene.tweens.add({
+        targets: this,
+        alpha: 0.7,
+        duration: 100,
+        yoyo: true,
+      });
+    }
+  }
+
+  public getScene(): Phaser.Scene {
+    return this.scene;
+  }
+
+  public getNearbyAllies(radius: number): GemOwner[] {
+    return this.nearbyAllies.filter(ally => {
+      if (ally === this || ally.isDefeated()) return false;
+      const distance = Phaser.Math.Distance.Between(this.x, this.y, ally.x, ally.y);
+      return distance <= radius;
+    });
+  }
+
+  /**
+   * Set the list of nearby allied minions (for heal abilities)
+   */
+  public setNearbyAllies(allies: Minion[]): void {
+    this.nearbyAllies = allies;
+  }
+
+  /**
+   * Equip a gem in a slot
+   */
+  public equipGem(gem: AbilityGem, slot?: number): boolean {
+    const success = this.abilitySystem.equipGem(gem, slot);
+    if (success) {
+      // Recalculate HP/MP caps after equipping (e.g., vitality gem)
+      const stats = this.getEffectiveStats();
+      // Don't reduce current HP/MP, just cap them
+      this.hp = Math.min(this.hp, stats.maxHp);
+      this.mp = Math.min(this.mp, stats.maxMp);
+      this.updateStatBars();
+    }
+    return success;
+  }
+
+  /**
+   * Get the ability system (for debugging/UI)
+   */
+  public getAbilitySystem(): AbilitySystem {
+    return this.abilitySystem;
   }
 
   /**
@@ -315,7 +418,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
   }
 
   private updateStatBars(): void {
-    const stats = this.leveling.getStats();
+    const stats = this.getEffectiveStats();
     this.statBars.update(
       this.x,
       this.y,
@@ -382,6 +485,9 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
     // Update HP bar position
     this.updateStatBars();
 
+    // Update ability system (for abilities that tick, like heal)
+    this.abilitySystem.update(delta);
+
     // Auto-aggro: check for nearby enemies when truly idle (no active command)
     if (this.autoAggroEnabled && !this.hasActiveCommand && !this.isInCombat() && this.threatTracker) {
       this.threatTracker.update(delta, this.x, this.y, this.nearbyEnemies);
@@ -394,14 +500,23 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
 
     // If in combat, update attack behavior and maintain position
     if (this.isInCombat() && this.combatTarget) {
-      // Stay at target's edge
-      const perimeterDistance = this.combatTarget.getRadius() + MINION_RADIUS;
-      const targetX = this.combatTarget.x + Math.cos(this.followAngleOffset) * perimeterDistance;
-      const targetY = this.combatTarget.y + Math.sin(this.followAngleOffset) * perimeterDistance;
+      // Get attack config with gem modifiers
+      const effectiveAttack = this.getEffectiveAttack();
+      const attackRange = effectiveAttack.range ?? 0;
+      // Position at attack range from target's edge
+      const combatDistance = this.combatTarget.getRadius() + MINION_RADIUS + attackRange;
+      const targetX = this.combatTarget.x + Math.cos(this.followAngleOffset) * combatDistance;
+      const targetY = this.combatTarget.y + Math.sin(this.followAngleOffset) * combatDistance;
       this.movement.moveTo(targetX, targetY);
 
-      // Update attack behavior
-      this.attackBehavior.update(delta);
+      // Update attack behavior with position context for range checking
+      const attackContext: AttackUpdateContext = {
+        attackerX: this.x,
+        attackerY: this.y,
+        attackerRadius: MINION_RADIUS,
+        effectiveAttack,
+      };
+      this.attackBehavior.update(delta, attackContext);
 
       this.movement.update();
       return;

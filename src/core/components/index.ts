@@ -1,7 +1,7 @@
 // Export all core components
 export { TargetedMovement, type TargetedMovementConfig } from './TargetedMovement';
 export { SelectionManager } from './SelectionManager';
-export { AttackBehavior, type AttackBehaviorConfig } from './AttackBehavior';
+export { AttackBehavior, type AttackBehaviorConfig, type AttackUpdateContext } from './AttackBehavior';
 export { StatBar, type StatBarConfig, HP_BAR_DEFAULTS, MP_BAR_DEFAULTS, XP_BAR_DEFAULTS, hpColorFn } from './StatBar';
 export { UnitStatBars, type UnitStatBarsConfig } from './UnitStatBars';
 export { LevelingSystem, type UnitStats, type LevelingConfig, defaultXpCurve } from './LevelingSystem';

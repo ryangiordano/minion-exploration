@@ -1,6 +1,5 @@
-import { Commandable, Followable } from '../types/interfaces';
+import { Commandable, Followable, Combatable } from '../types/interfaces';
 import { Treasure } from '../../features/treasure';
-import { Enemy } from '../../features/enemies';
 
 /**
  * Base interface for all commands
@@ -57,26 +56,24 @@ export class CollectCommand implements Command {
  * Interface for units that can enter combat mode
  */
 interface CombatCapable {
-  enterCombat(target: Enemy, onDefeated: () => void): void;
+  enterCombat(target: Combatable, onDefeated: () => void): void;
 }
 
 /**
- * Command to attack an enemy
- * Unit follows enemy, then enters continuous combat mode
+ * Command to attack a combatable target (enemy, target dummy, etc.)
+ * Immediately enters combat mode - combat handles approach and attacking
  */
 export class AttackCommand implements Command {
   constructor(
-    private readonly enemy: Enemy,
+    private readonly target: Combatable,
     private readonly onDefeat: () => void
   ) {}
 
   execute(unit: Commandable): void {
-    unit.followTarget(this.enemy, () => {
-      // On arrival, enter combat mode instead of instant defeat
-      if ('enterCombat' in unit && typeof (unit as CombatCapable).enterCombat === 'function') {
-        (unit as CombatCapable).enterCombat(this.enemy, this.onDefeat);
-      }
-    });
+    // Enter combat immediately - combat mode handles moving to attack range
+    if ('enterCombat' in unit && typeof (unit as CombatCapable).enterCombat === 'function') {
+      (unit as CombatCapable).enterCombat(this.target, this.onDefeat);
+    }
   }
 }
 

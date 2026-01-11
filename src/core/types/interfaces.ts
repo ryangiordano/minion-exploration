@@ -36,6 +36,7 @@ export interface AttackConfig {
   damage: number;
   cooldownMs: number;
   effectType?: string;  // 'melee', 'ranged', etc. for visual feedback
+  range?: number;       // Distance beyond touching at which attack can be performed (0 = melee)
 }
 
 /**

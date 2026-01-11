@@ -1,7 +1,15 @@
+import Phaser from 'phaser';
 import { Combatable, AttackConfig } from '../types/interfaces';
 
 export interface AttackBehaviorConfig {
   defaultAttack: AttackConfig;
+}
+
+export interface AttackUpdateContext {
+  attackerX: number;
+  attackerY: number;
+  attackerRadius: number;
+  effectiveAttack?: AttackConfig;  // Optional override for dynamic attack configs
 }
 
 export class AttackBehavior {
@@ -62,8 +70,9 @@ export class AttackBehavior {
   /**
    * Update the attack behavior - call every frame
    * @param delta - Time since last frame in ms
+   * @param context - Position and attack config for range checking
    */
-  public update(delta: number): void {
+  public update(delta: number, context?: AttackUpdateContext): void {
     if (!this.target) return;
 
     // Check if target was defeated by someone else
@@ -74,13 +83,33 @@ export class AttackBehavior {
       return;
     }
 
+    // Use effective attack if provided, otherwise default
+    const attack = context?.effectiveAttack ?? this.defaultAttack;
+
+    // Check range if context provided
+    if (context) {
+      const distance = Phaser.Math.Distance.Between(
+        context.attackerX, context.attackerY,
+        this.target.x, this.target.y
+      );
+      const touchDistance = context.attackerRadius + this.target.getRadius();
+      const attackRange = attack.range ?? 0;
+      const maxAttackDistance = touchDistance + attackRange + 5; // +5 tolerance
+
+      // Not in range yet - don't attack, just tick cooldown
+      if (distance > maxAttackDistance) {
+        this.cooldownTimer -= delta;
+        return;
+      }
+    }
+
     // Update cooldown
     this.cooldownTimer -= delta;
 
     // Attack if cooldown is ready
     if (this.cooldownTimer <= 0) {
-      this.performAttack(this.defaultAttack);
-      this.cooldownTimer = this.defaultAttack.cooldownMs;
+      this.performAttack(attack);
+      this.cooldownTimer = attack.cooldownMs;
     }
   }
 
