@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
+import { Followable } from '../../core/types/interfaces';
 
-export class Player extends Phaser.Physics.Arcade.Sprite {
+export class Player extends Phaser.Physics.Arcade.Sprite implements Followable {
+  private readonly radius = 16;
   private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd?: {
     up: Phaser.Input.Keyboard.Key;
@@ -101,5 +103,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   public getStaminaPercentage(): number {
     return this.stamina / this.maxStamina;
+  }
+
+  public getRadius(): number {
+    return this.radius;
   }
 }

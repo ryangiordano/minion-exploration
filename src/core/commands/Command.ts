@@ -1,4 +1,4 @@
-import { Commandable } from '../types/interfaces';
+import { Commandable, Followable } from '../types/interfaces';
 import { Treasure } from '../../features/treasure';
 import { Enemy } from '../../features/enemies';
 
@@ -77,5 +77,18 @@ export class AttackCommand implements Command {
         (unit as CombatCapable).enterCombat(this.enemy, this.onDefeat);
       }
     });
+  }
+}
+
+/**
+ * Command to follow a target continuously (e.g., follow the player)
+ * Unit keeps following until given another command
+ */
+export class FollowCommand implements Command {
+  constructor(private readonly target: Followable) {}
+
+  execute(unit: Commandable): void {
+    // Persistent follow - unit stays with target until given new command
+    unit.followTarget(this.target, undefined, true);
   }
 }
