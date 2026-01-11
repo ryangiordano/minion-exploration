@@ -10,9 +10,9 @@ const DEFAULT_ATTACK_COOLDOWN = 1500;  // Slower attacks
 
 // Default enemy base stats at level 1
 const DEFAULT_BASE_STATS = {
-  maxHp: 2,        // Less tanky
+  maxHp: 4,        // Tanky but slow - feel like obstacles
   maxMp: 0,        // Enemies don't use MP (yet)
-  strength: 1,     // Base damage
+  strength: 1,     // Same damage as minions, but much slower attacks
   dexterity: 1,
   magic: 1,
   resilience: 1,

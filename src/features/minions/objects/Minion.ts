@@ -10,7 +10,7 @@ const MINION_RADIUS = 10;
 
 // Default minion base stats at level 1
 const DEFAULT_BASE_STATS = {
-  maxHp: 3,
+  maxHp: 5,        // Resilient - survive longer in early game
   maxMp: 5,
   strength: 1,
   dexterity: 1,
