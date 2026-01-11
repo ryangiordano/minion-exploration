@@ -8,6 +8,7 @@ export interface ThreatEntry {
 
 export interface ThreatTrackerConfig {
   aggroRadius?: number;        // Detection range (default: 150)
+  leashRadius?: number;        // Max chase range, clears threat beyond this (default: aggroRadius * 1.5)
   baseThreat?: number;         // Initial threat when detected (default: 10)
   damageMultiplier?: number;   // Threat per damage point (default: 5)
   decayRate?: number;          // Threat decay per second (default: 2)
@@ -15,6 +16,7 @@ export interface ThreatTrackerConfig {
 
 const DEFAULTS = {
   aggroRadius: 150,
+  leashMultiplier: 1.5,        // Leash is 1.5x aggro radius by default
   baseThreat: 10,
   damageMultiplier: 5,
   decayRate: 2
@@ -30,6 +32,7 @@ export class ThreatTracker {
   private needsSort = false;
 
   private readonly aggroRadius: number;
+  private readonly leashRadius: number;
   private readonly baseThreat: number;
   private readonly damageMultiplier: number;
   private readonly decayRate: number;
@@ -39,6 +42,7 @@ export class ThreatTracker {
 
   constructor(config: ThreatTrackerConfig = {}) {
     this.aggroRadius = config.aggroRadius ?? DEFAULTS.aggroRadius;
+    this.leashRadius = config.leashRadius ?? (this.aggroRadius * DEFAULTS.leashMultiplier);
     this.baseThreat = config.baseThreat ?? DEFAULTS.baseThreat;
     this.damageMultiplier = config.damageMultiplier ?? DEFAULTS.damageMultiplier;
     this.decayRate = config.decayRate ?? DEFAULTS.decayRate;
@@ -89,6 +93,15 @@ export class ThreatTracker {
     for (const [target, entry] of this.threatMap) {
       // Remove defeated targets
       if (target.isDefeated()) {
+        toRemove.push(target);
+        continue;
+      }
+
+      // Check leash radius - clear threat if target moved too far away
+      const distance = Math.sqrt(
+        Math.pow(target.x - ownerX, 2) + Math.pow(target.y - ownerY, 2)
+      );
+      if (distance > this.leashRadius) {
         toRemove.push(target);
         continue;
       }
@@ -199,6 +212,13 @@ export class ThreatTracker {
    */
   public getAggroRadius(): number {
     return this.aggroRadius;
+  }
+
+  /**
+   * Get the leash radius (max chase distance)
+   */
+  public getLeashRadius(): number {
+    return this.leashRadius;
   }
 
   private addThreatEntry(target: Combatable, value: number): void {
