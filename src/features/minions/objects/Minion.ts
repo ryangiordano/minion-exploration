@@ -263,6 +263,9 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
   }
 
   update(delta: number = 0): void {
+    // Don't update if defeated (death animation playing)
+    if (this.defeated) return;
+
     // Update selection circle position
     if (this.selectionCircle) {
       this.selectionCircle.setPosition(this.x, this.y);
