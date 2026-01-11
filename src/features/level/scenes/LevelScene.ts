@@ -5,8 +5,8 @@ import { Treasure } from '../../treasure';
 import { Enemy } from '../../enemies';
 import { StaminaBar } from '../ui/StaminaBar';
 import { ScoreDisplay } from '../ui/ScoreDisplay';
-import { SelectionManager, WhistleSelection } from '../../../core/components';
-import { MoveCommand, CollectCommand, AttackCommand } from '../../../core/commands';
+import { SelectionManager, WhistleSelection, CombatManager } from '../../../core/components';
+import { MoveCommand, CollectCommand, AttackCommand, FollowCommand } from '../../../core/commands';
 
 // Command pulse colors by action type
 const PULSE_COLORS = {
@@ -23,6 +23,7 @@ export class LevelScene extends Phaser.Scene {
   private treasures: Treasure[] = [];
   private enemies: Enemy[] = [];
   private selectionManager = new SelectionManager();
+  private combatManager = new CombatManager();
   private whistleSelection?: WhistleSelection;
 
   constructor() {
@@ -70,22 +71,7 @@ export class LevelScene extends Phaser.Scene {
     ];
 
     minionPositions.forEach(pos => {
-      const minion = new Minion(this, pos.x, pos.y);
-      this.minions.push(minion);
-
-      // Setup selection handling
-      minion.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
-        if (pointer.leftButtonDown()) {
-          // Shift-click for multi-select, regular click for single select
-          if (this.input.keyboard && this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT).isDown) {
-            this.selectionManager.toggleSelection(minion);
-          } else {
-            this.selectionManager.select(minion);
-          }
-          // Stop event from propagating to background click
-          event.stopPropagation();
-        }
-      });
+      this.spawnMinion(pos.x, pos.y);
     });
 
     // Setup background click handlers
@@ -105,9 +91,12 @@ export class LevelScene extends Phaser.Scene {
     // Setup whistle selection (Space key)
     this.setupWhistleSelection();
 
+    // Setup follow command (F key)
+    this.setupFollowCommand();
+
     // Add instructions
     const instructions = this.add.text(10, 10,
-      'WASD/Arrows: Move | Shift: Sprint | Click: Select | Space: Whistle Select | Right-Click: Command',
+      'WASD/Arrows: Move | Shift: Sprint | Click: Select | Space: Whistle | F: Follow | Right-Click: Command',
       {
         fontSize: '12px',
         color: '#ffffff',
@@ -129,6 +118,9 @@ export class LevelScene extends Phaser.Scene {
 
     // Update all minions with delta time for combat cooldowns
     this.minions.forEach(minion => minion.update(delta));
+
+    // Update all enemies (for fighting back)
+    this.enemies.forEach(enemy => enemy.update(delta));
 
     // Update whistle selection animation
     this.whistleSelection?.update(delta);
@@ -171,6 +163,48 @@ export class LevelScene extends Phaser.Scene {
         // Additive selection - don't clear existing
         this.selectionManager.addMultipleToSelection(units as Minion[]);
       });
+  }
+
+  private setupFollowCommand(): void {
+    if (!this.input.keyboard) return;
+
+    const fKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F);
+    fKey.on('down', () => {
+      if (this.player && this.selectionManager.hasSelection()) {
+        const followCommand = new FollowCommand(this.player);
+        this.selectionManager.issueCommand(followCommand);
+      }
+    });
+  }
+
+  private spawnMinion(x: number, y: number): Minion {
+    const minion = new Minion(this, x, y, { combatManager: this.combatManager });
+    this.minions.push(minion);
+
+    // Setup selection handling
+    minion.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
+      if (pointer.leftButtonDown()) {
+        // Shift-click for multi-select, regular click for single select
+        if (this.input.keyboard && this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT).isDown) {
+          this.selectionManager.toggleSelection(minion);
+        } else {
+          this.selectionManager.select(minion);
+        }
+        // Stop event from propagating to background click
+        event.stopPropagation();
+      }
+    });
+
+    // Handle death - remove from arrays
+    minion.onDeath(() => {
+      const index = this.minions.indexOf(minion);
+      if (index > -1) {
+        this.minions.splice(index, 1);
+      }
+      this.selectionManager.removeFromSelection(minion);
+    });
+
+    return minion;
   }
 
   private showClickPulse(x: number, y: number, color: number = PULSE_COLORS.move): void {

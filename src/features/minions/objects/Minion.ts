@@ -1,18 +1,27 @@
 import Phaser from 'phaser';
 import { TargetedMovement } from '../../../core/components/TargetedMovement';
 import { AttackBehavior } from '../../../core/components/AttackBehavior';
+import { HpBar } from '../../../core/components/HpBar';
+import { CombatManager } from '../../../core/components/CombatManager';
 import { Unit, Followable, Combatable, Attacker, AttackConfig } from '../../../core/types/interfaces';
 
 const MINION_RADIUS = 10;
 
-// Default minion attack stats
+// Default minion stats
 const DEFAULT_ATTACK: AttackConfig = {
   damage: 1,
   cooldownMs: 500,
   effectType: 'melee'
 };
 
-export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attacker {
+const DEFAULT_MAX_HP = 3;
+
+export interface MinionConfig {
+  maxHp?: number;
+  combatManager?: CombatManager;
+}
+
+export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attacker, Combatable {
   private selected = false;
   private selectionCircle?: Phaser.GameObjects.Graphics;
   private movement!: TargetedMovement;
@@ -20,13 +29,31 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
   private arrivalCallback?: () => void;
   private followingTarget?: Followable;
   private followAngleOffset = 0;
+  private persistentFollow = false;
+
+  // HP state
+  private hp: number;
+  private maxHp: number;
+  private defeated = false;
+  private hpBar: HpBar;
 
   // Combat state
   private combatTarget?: Combatable;
   private onCombatTargetDefeated?: () => void;
+  private combatManager?: CombatManager;
 
-  constructor(scene: Phaser.Scene, x: number, y: number) {
+  // Death callback
+  private onDeathCallback?: () => void;
+
+  constructor(scene: Phaser.Scene, x: number, y: number, config: MinionConfig = {}) {
     super(scene, x, y, '');
+
+    // Initialize HP
+    this.maxHp = config.maxHp ?? DEFAULT_MAX_HP;
+    this.hp = this.maxHp;
+
+    // Store combat manager reference
+    this.combatManager = config.combatManager;
 
     // Add to scene
     scene.add.existing(this);
@@ -75,6 +102,12 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
     this.selectionCircle.lineStyle(2, 0xffff00, 1);
     this.selectionCircle.strokeCircle(0, 0, 14);
     this.selectionCircle.setVisible(false);
+
+    // Create HP bar (auto-hides when full)
+    this.hpBar = new HpBar(scene, {
+      width: MINION_RADIUS * 2,
+      offsetY: -MINION_RADIUS - 6
+    });
   }
 
   public getPrimaryAttack(): AttackConfig {
@@ -98,25 +131,93 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
   public moveTo(x: number, y: number, onArrival?: () => void): void {
     this.exitCombat(); // Cancel combat if moving
     this.followingTarget = undefined;
+    this.persistentFollow = false;
     this.arrivalCallback = onArrival;
     this.movement.moveTo(x, y);
   }
 
-  public followTarget(target: Followable, onArrival: () => void): void {
+  public followTarget(target: Followable, onArrival?: () => void, persistent = false): void {
     this.exitCombat(); // Cancel combat if following new target
     this.followingTarget = target;
     this.arrivalCallback = onArrival;
+    this.persistentFollow = persistent;
     this.followAngleOffset = Math.random() * Math.PI * 2;
     this.movement.moveTo(target.x, target.y);
   }
 
   public stopMoving(): void {
     this.followingTarget = undefined;
+    this.persistentFollow = false;
     this.movement.stop();
   }
 
   public getRadius(): number {
     return MINION_RADIUS;
+  }
+
+  // Combatable interface
+  public getCurrentHp(): number {
+    return this.hp;
+  }
+
+  public getMaxHp(): number {
+    return this.maxHp;
+  }
+
+  public takeDamage(amount: number): void {
+    if (this.defeated) return;
+
+    this.hp = Math.max(0, this.hp - amount);
+    this.updateHpBar();
+
+    // Visual feedback: flash red
+    this.scene.tweens.add({
+      targets: this,
+      alpha: 0.5,
+      duration: 50,
+      yoyo: true,
+    });
+
+    if (this.hp <= 0) {
+      this.die();
+    }
+  }
+
+  public isDefeated(): boolean {
+    return this.defeated;
+  }
+
+  /**
+   * Set callback for when this minion dies
+   */
+  public onDeath(callback: () => void): void {
+    this.onDeathCallback = callback;
+  }
+
+  private die(): void {
+    if (this.defeated) return;
+
+    this.defeated = true;
+    this.exitCombat();
+    this.deselect();
+
+    // Death animation
+    this.scene.tweens.add({
+      targets: this,
+      alpha: 0,
+      scale: 0.5,
+      duration: 200,
+      onComplete: () => {
+        if (this.onDeathCallback) {
+          this.onDeathCallback();
+        }
+        this.destroy();
+      }
+    });
+  }
+
+  private updateHpBar(): void {
+    this.hpBar.update(this.x, this.y, this.hp, this.maxHp);
   }
 
   /**
@@ -127,6 +228,9 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
     this.onCombatTargetDefeated = onDefeated;
     this.attackBehavior.engage(target);
     this.followAngleOffset = Math.random() * Math.PI * 2;
+
+    // Register combat through manager (handles attacker registration)
+    this.combatManager?.startCombat(this, target);
   }
 
   /**
@@ -141,6 +245,9 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
     this.combatTarget = undefined;
     this.onCombatTargetDefeated = undefined;
     this.attackBehavior.disengage();
+
+    // End combat through manager (handles attacker unregistration)
+    this.combatManager?.endCombat(this);
 
     // Fire the defeat callback if target was defeated
     if (callback && wasDefeated) {
@@ -160,6 +267,9 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
     if (this.selectionCircle) {
       this.selectionCircle.setPosition(this.x, this.y);
     }
+
+    // Update HP bar position
+    this.updateHpBar();
 
     // If in combat, update attack behavior and maintain position
     if (this.isInCombat() && this.combatTarget) {
@@ -196,7 +306,10 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
         this.movement.stop();
         const callback = this.arrivalCallback;
         this.arrivalCallback = undefined;
-        this.followingTarget = undefined;
+        // Only clear follow target if not persistent
+        if (!this.persistentFollow) {
+          this.followingTarget = undefined;
+        }
         if (callback) callback();
         return;
       }
@@ -256,6 +369,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
 
   destroy(fromScene?: boolean): void {
     this.selectionCircle?.destroy();
+    this.hpBar.destroy();
     super.destroy(fromScene);
   }
 }

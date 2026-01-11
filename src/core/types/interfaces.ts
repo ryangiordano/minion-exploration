@@ -21,7 +21,7 @@ export interface Followable {
  */
 export interface Commandable {
   moveTo(x: number, y: number, onArrival?: () => void): void;
-  followTarget(target: Followable, onArrival: () => void): void;
+  followTarget(target: Followable, onArrival?: () => void, persistent?: boolean): void;
 }
 
 /**
@@ -53,4 +53,12 @@ export interface Combatable extends Followable {
  */
 export interface Attacker {
   getPrimaryAttack(): AttackConfig;
+}
+
+/**
+ * Interface for Combatables that can track and fight back against attackers
+ */
+export interface CombatableWithAttackers extends Combatable {
+  addAttacker(attacker: Combatable): void;
+  removeAttacker(attacker: Combatable): void;
 }
