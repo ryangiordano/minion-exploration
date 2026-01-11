@@ -12,6 +12,7 @@ export interface FloatingTextConfig {
   fontFamily?: string;      // Font family (default: 'Arial')
   stroke?: string;          // Stroke/outline color (default: '#000000')
   strokeWidth?: number;     // Stroke width (default: 2)
+  ease?: string;            // Easing function (default: 'Sine.easeInOut')
 }
 
 /**
@@ -40,6 +41,7 @@ export class FloatingText {
       fontFamily = 'Arial',
       stroke = '#000000',
       strokeWidth = 2,
+      ease = 'Sine.easeInOut',
     } = config;
 
     const textObject = this.scene.add.text(x, y, text, {
@@ -62,7 +64,7 @@ export class FloatingText {
       y: y - floatDistance,
       alpha: 0,
       duration,
-      ease: 'Power2',
+      ease,
       onComplete: () => {
         textObject.destroy();
       },
@@ -110,11 +112,12 @@ export class FloatingText {
     return this.show({
       text: `+${amount}`,
       x,
-      y,
+      y: y - 15, // Start above the target
       color: '#44ff44',
-      fontSize: 12,
-      duration: 800,
-      floatSpeed: 60,
+      fontSize: 16,
+      duration: 1200,
+      floatSpeed: 35,
+      ease: 'Sine.easeInOut',
     });
   }
 }

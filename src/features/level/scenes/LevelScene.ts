@@ -5,7 +5,7 @@ import { Treasure } from '../../treasure';
 import { Enemy, TargetDummy } from '../../enemies';
 import { StaminaBar } from '../ui/StaminaBar';
 import { ScoreDisplay } from '../ui/ScoreDisplay';
-import { SelectionManager, WhistleSelection, CombatManager, CombatXpTracker } from '../../../core/components';
+import { SelectionManager, WhistleSelection, CombatManager, CombatXpTracker, GameEventManager } from '../../../core/components';
 import { MoveCommand, CollectCommand, AttackCommand, FollowCommand } from '../../../core/commands';
 import { VitalityGem, KnockbackGem, HealPulseGem, RangedAttackGem } from '../../../core/abilities';
 
@@ -28,6 +28,7 @@ export class LevelScene extends Phaser.Scene {
   private combatManager = new CombatManager();
   private xpTracker = new CombatXpTracker({ baseXpPerKill: 10 });
   private whistleSelection?: WhistleSelection;
+  private eventManager?: GameEventManager;
 
   constructor() {
     super({ key: 'LevelScene' });
@@ -59,6 +60,9 @@ export class LevelScene extends Phaser.Scene {
     // Create UI
     this.staminaBar = new StaminaBar(this);
     this.scoreDisplay = new ScoreDisplay(this);
+
+    // Event manager for floating text and other UI feedback
+    this.eventManager = new GameEventManager(this);
 
     // Spawn treasures around the world
     this.spawnTreasures(worldWidth, worldHeight);
@@ -385,5 +389,12 @@ export class LevelScene extends Phaser.Scene {
     });
 
     return dummy;
+  }
+
+  /**
+   * Get the event manager for emitting game events
+   */
+  public getEventManager(): GameEventManager | undefined {
+    return this.eventManager;
   }
 }

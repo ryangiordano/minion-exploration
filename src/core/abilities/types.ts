@@ -11,6 +11,39 @@ export interface StatModifier {
 }
 
 /**
+ * Defines an active ability that can be triggered by the ActionResolver.
+ * This is pure data - no behavior logic.
+ */
+export interface AbilityDefinition {
+  id: string;
+  name: string;
+  description: string;
+
+  // Costs
+  mpCost: number;
+  cooldownMs: number;
+
+  // Targeting
+  targetType: 'self' | 'ally' | 'enemy' | 'area_allies' | 'area_enemies';
+  range: number;
+
+  // Effect
+  effectType: 'heal' | 'damage' | 'buff' | 'debuff';
+  basePower: number;
+  scalingStat?: 'strength' | 'magic' | 'dexterity';
+  scalingRatio?: number;  // How much stat contributes (e.g., 0.5 = +0.5 per stat point)
+
+  // Auto-trigger conditions (for abilities that activate automatically)
+  autoTrigger?: {
+    condition: 'ally_wounded' | 'enemy_in_range' | 'self_wounded' | 'always';
+    threshold?: number;  // e.g., 0.7 for "ally below 70% HP"
+  };
+
+  // Visual effect key (for effect system to dispatch)
+  effectKey?: string;
+}
+
+/**
  * Context passed to onAttackHit hook
  */
 export interface AttackHitContext {
@@ -47,11 +80,15 @@ export interface GemOwner {
   spendMp(amount: number): boolean;
   heal(amount: number): void;
 
+  // Stats for ability scaling
+  getStat?(stat: 'strength' | 'magic' | 'dexterity'): number;
+
   // Scene access for effects
   getScene(): Phaser.Scene;
 
-  // Finding allies (for abilities like heal)
+  // Finding allies/enemies (for abilities)
   getNearbyAllies?(radius: number): GemOwner[];
+  getNearbyEnemies?(radius: number): Combatable[];
 }
 
 /**
@@ -66,16 +103,20 @@ export interface AbilityGem {
   onEquip?(owner: GemOwner): void;
   onUnequip?(owner: GemOwner): void;
 
-  // Combat hooks
+  // Combat hooks (effects triggered by attacks)
   onAttackHit?(context: AttackHitContext): void;
   onTakeDamage?(context: TakeDamageContext): void;
 
-  // Update hook for abilities that tick (like auto-heal)
-  onUpdate?(owner: GemOwner, delta: number): void;
+  // Active ability definition (executed by ActionResolver)
+  getAbility?(): AbilityDefinition;
 
   // Passive stat modifiers
   getStatModifiers?(): StatModifier[];
 
   // Attack modifiers (range, effectType, etc.)
   getAttackModifiers?(): Partial<AttackConfig>;
+
+  // DEPRECATED: Use getAbility() instead. Will be removed.
+  // Only kept for backwards compatibility during migration.
+  onUpdate?(owner: GemOwner, delta: number): void;
 }

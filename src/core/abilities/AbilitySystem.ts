@@ -1,4 +1,5 @@
-import { AbilityGem, GemOwner, StatModifier, AttackHitContext, TakeDamageContext } from './types';
+import { AbilityGem, AbilityDefinition, GemOwner, StatModifier, AttackHitContext, TakeDamageContext } from './types';
+import { ActionResolver, ActionResolverContext } from './ActionResolver';
 import { Combatable, AttackConfig } from '../types/interfaces';
 import Phaser from 'phaser';
 
@@ -9,15 +10,18 @@ export interface AbilitySystemConfig {
 /**
  * Manages equipped ability gems for an entity.
  * Dispatches lifecycle hooks to gems and aggregates stat modifiers.
+ * Uses ActionResolver to handle active ability behavior.
  */
 export class AbilitySystem {
   private slots: (AbilityGem | null)[];
   private owner: GemOwner;
+  private actionResolver: ActionResolver;
 
   constructor(owner: GemOwner, config: AbilitySystemConfig = {}) {
     this.owner = owner;
     const maxSlots = config.maxSlots ?? 1;
     this.slots = new Array(maxSlots).fill(null);
+    this.actionResolver = new ActionResolver();
   }
 
   /**
@@ -125,12 +129,48 @@ export class AbilitySystem {
   }
 
   /**
-   * Update all equipped gems (for abilities that tick)
+   * Update abilities - uses ActionResolver for getAbility() gems,
+   * falls back to onUpdate() for legacy gems.
+   * @returns true if an ability was executed this frame
    */
-  public update(delta: number): void {
+  public update(delta: number): boolean {
+    // Collect ability definitions from gems that use the new pattern
+    const abilities: AbilityDefinition[] = [];
+    const legacyGems: AbilityGem[] = [];
+
     for (const gem of this.getEquippedGems()) {
+      const ability = gem.getAbility?.();
+      if (ability) {
+        abilities.push(ability);
+      } else if (gem.onUpdate) {
+        // Legacy gem with onUpdate - still support it
+        legacyGems.push(gem);
+      }
+    }
+
+    // Let ActionResolver handle new-style abilities
+    let abilityUsed = false;
+    if (abilities.length > 0) {
+      const context: ActionResolverContext = {
+        owner: this.owner,
+        delta,
+      };
+      abilityUsed = this.actionResolver.update(context, abilities);
+    }
+
+    // Still call onUpdate for legacy gems (backwards compatibility)
+    for (const gem of legacyGems) {
       gem.onUpdate?.(this.owner, delta);
     }
+
+    return abilityUsed;
+  }
+
+  /**
+   * Get the action resolver (for debugging/UI showing cooldowns)
+   */
+  public getActionResolver(): ActionResolver {
+    return this.actionResolver;
   }
 
   /**

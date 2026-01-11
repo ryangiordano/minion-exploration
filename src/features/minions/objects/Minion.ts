@@ -336,6 +336,11 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
     return this.scene;
   }
 
+  public getStat(stat: 'strength' | 'magic' | 'dexterity'): number {
+    const stats = this.getEffectiveStats();
+    return stats[stat];
+  }
+
   public getNearbyAllies(radius: number): GemOwner[] {
     return this.nearbyAllies.filter(ally => {
       if (ally === this || ally.isDefeated()) return false;
