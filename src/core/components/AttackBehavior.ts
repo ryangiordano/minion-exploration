@@ -87,14 +87,16 @@ export class AttackBehavior {
   private performAttack(attack: AttackConfig): void {
     if (!this.target) return;
 
-    this.target.takeDamage(attack.damage);
-    this.onAttackCallback?.(this.target, attack.damage);
+    // Store reference before damage - target may trigger callbacks that clear this.target
+    const target = this.target;
 
-    // Check if we just killed the target
-    if (this.target.isDefeated()) {
-      const defeatedTarget = this.target;
+    target.takeDamage(attack.damage);
+    this.onAttackCallback?.(target, attack.damage);
+
+    // Check if we just killed the target (and we're still tracking it)
+    if (this.target === target && target.isDefeated()) {
       this.disengage();
-      this.onTargetDefeatedCallback?.(defeatedTarget);
+      this.onTargetDefeatedCallback?.(target);
     }
   }
 }
