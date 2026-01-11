@@ -2,8 +2,7 @@
 export { TargetedMovement, type TargetedMovementConfig } from './TargetedMovement';
 export { SelectionManager } from './SelectionManager';
 export { AttackBehavior, type AttackBehaviorConfig } from './AttackBehavior';
-export { HpBar, type HpBarConfig } from './HpBar';
-export { StatBar, type StatBarConfig } from './StatBar';
+export { StatBar, type StatBarConfig, HP_BAR_DEFAULTS, MP_BAR_DEFAULTS, XP_BAR_DEFAULTS, hpColorFn } from './StatBar';
 export { UnitStatBars, type UnitStatBarsConfig } from './UnitStatBars';
 export { LevelingSystem, type UnitStats, type LevelingConfig, defaultXpCurve } from './LevelingSystem';
 export { WhistleSelection, type WhistleSelectionConfig } from './WhistleSelection';

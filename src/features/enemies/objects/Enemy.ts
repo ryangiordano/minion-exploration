@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { Combatable, AttackConfig, AggroCapable } from '../../../core/types/interfaces';
-import { HpBar, AttackBehavior, ThreatTracker, TargetedMovement, LevelingSystem, defaultXpCurve } from '../../../core/components';
+import { StatBar, HP_BAR_DEFAULTS, AttackBehavior, ThreatTracker, TargetedMovement, LevelingSystem, defaultXpCurve } from '../../../core/components';
 
 const ENEMY_RADIUS = 16;
 const DEFAULT_AGGRO_RADIUS = 150;
@@ -35,7 +35,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
   private leveling: LevelingSystem;
   private hp: number;
   private defeated = false;
-  private hpBar: HpBar;
+  private hpBar: StatBar;
   private attackBehavior: AttackBehavior;
   private threatTracker: ThreatTracker;
   private movement: TargetedMovement;
@@ -93,7 +93,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
     });
 
     // Create HP bar component (auto-hides when full)
-    this.hpBar = new HpBar(scene, {
+    this.hpBar = new StatBar(scene, {
+      ...HP_BAR_DEFAULTS,
       width: ENEMY_RADIUS * 2,
       offsetY: -ENEMY_RADIUS - 8
     });

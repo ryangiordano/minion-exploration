@@ -1,12 +1,5 @@
 import Phaser from 'phaser';
-import { StatBar } from './StatBar';
-
-// Default bar colors
-const COLORS = {
-  HP: 0x00ff00,      // Green
-  MP: 0x4488ff,      // Blue
-  XP: 0xffcc00,      // Yellow/Gold
-};
+import { StatBar, HP_BAR_DEFAULTS, MP_BAR_DEFAULTS, XP_BAR_DEFAULTS } from './StatBar';
 
 export interface UnitStatBarsConfig {
   width?: number;
@@ -42,32 +35,29 @@ export class UnitStatBars {
     let currentOffset = this.offsetY;
 
     this.hpBar = new StatBar(scene, {
+      ...HP_BAR_DEFAULTS,
       width,
       height: this.barHeight,
       offsetY: currentOffset,
-      color: COLORS.HP,
-      hideWhenFull: true,
     });
     currentOffset += this.barHeight;
 
     if (this.showMp) {
       this.mpBar = new StatBar(scene, {
+        ...MP_BAR_DEFAULTS,
         width,
         height: this.barHeight,
         offsetY: currentOffset,
-        color: COLORS.MP,
-        hideWhenFull: true,
       });
       currentOffset += this.barHeight;
     }
 
     if (this.showXp) {
       this.xpBar = new StatBar(scene, {
+        ...XP_BAR_DEFAULTS,
         width,
         height: this.barHeight,
         offsetY: currentOffset,
-        color: COLORS.XP,
-        hideWhenFull: false, // Always show XP progress
       });
     }
   }
