@@ -1,27 +1,37 @@
 import Phaser from 'phaser';
 import { TargetedMovement } from '../../../core/components/TargetedMovement';
 import { AttackBehavior } from '../../../core/components/AttackBehavior';
-import { HpBar } from '../../../core/components/HpBar';
 import { CombatManager } from '../../../core/components/CombatManager';
 import { ThreatTracker } from '../../../core/components/ThreatTracker';
+import { LevelingSystem, UnitStatBars, defaultXpCurve, CombatXpTracker } from '../../../core/components';
 import { Unit, Followable, Combatable, Attacker, AttackConfig, AggroCapable } from '../../../core/types/interfaces';
 
 const MINION_RADIUS = 10;
 
-// Default minion stats
-const DEFAULT_ATTACK: AttackConfig = {
-  damage: 1,
-  cooldownMs: 500,
-  effectType: 'melee'
+// Default minion base stats at level 1
+const DEFAULT_BASE_STATS = {
+  maxHp: 3,
+  maxMp: 5,
+  strength: 1,
+  dexterity: 1,
+  magic: 1,
+  resilience: 1,
 };
 
-const DEFAULT_MAX_HP = 3;
+// Stat growth per level
+const DEFAULT_STAT_GROWTH = {
+  maxHp: 1,
+  maxMp: 1,
+  strength: 0.5,
+};
+
+const DEFAULT_ATTACK_COOLDOWN = 500;
 
 const DEFAULT_AGGRO_RADIUS = 100;
 
 export interface MinionConfig {
-  maxHp?: number;
   combatManager?: CombatManager;
+  xpTracker?: CombatXpTracker;
   aggroRadius?: number;
   enableAutoAggro?: boolean;
 }
@@ -36,16 +46,18 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
   private followAngleOffset = 0;
   private persistentFollow = false;
 
-  // HP state
+  // Stats and leveling
+  private leveling: LevelingSystem;
   private hp: number;
-  private maxHp: number;
+  private mp: number;
   private defeated = false;
-  private hpBar: HpBar;
+  private statBars: UnitStatBars;
 
   // Combat state
   private combatTarget?: Combatable;
   private onCombatTargetDefeated?: () => void;
   private combatManager?: CombatManager;
+  private xpTracker?: CombatXpTracker;
 
   // Aggro state
   private threatTracker?: ThreatTracker;
@@ -59,12 +71,30 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
   constructor(scene: Phaser.Scene, x: number, y: number, config: MinionConfig = {}) {
     super(scene, x, y, '');
 
-    // Initialize HP
-    this.maxHp = config.maxHp ?? DEFAULT_MAX_HP;
-    this.hp = this.maxHp;
+    // Initialize leveling system
+    this.leveling = new LevelingSystem({
+      baseStats: DEFAULT_BASE_STATS,
+      growthPerLevel: DEFAULT_STAT_GROWTH,
+      xpCurve: defaultXpCurve,
+    });
 
-    // Store combat manager reference
+    // Initialize HP and MP from base stats
+    const stats = this.leveling.getStats();
+    this.hp = stats.maxHp;
+    this.mp = stats.maxMp;
+
+    // Handle level ups - increase max HP/MP and heal the difference
+    this.leveling.onLevelUp((_newLevel, newStats) => {
+      const oldMaxHp = stats.maxHp;
+      const oldMaxMp = stats.maxMp;
+      // Heal the amount gained
+      this.hp = Math.min(this.hp + (newStats.maxHp - oldMaxHp), newStats.maxHp);
+      this.mp = Math.min(this.mp + (newStats.maxMp - oldMaxMp), newStats.maxMp);
+    });
+
+    // Store combat manager and XP tracker references
     this.combatManager = config.combatManager;
+    this.xpTracker = config.xpTracker;
 
     // Setup auto-aggro
     this.autoAggroEnabled = config.enableAutoAggro !== false;
@@ -106,9 +136,11 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
       defaultAttack: this.getPrimaryAttack()
     });
 
-    // Visual feedback when attacking
+    // Visual feedback when attacking and record participation for XP
     this.attackBehavior.onAttack((target) => {
       this.showAttackEffect(target);
+      // Record combat participation for XP distribution
+      this.xpTracker?.recordParticipation(this, target);
     });
 
     // Handle target defeated
@@ -125,15 +157,21 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
     this.selectionCircle.strokeCircle(0, 0, 14);
     this.selectionCircle.setVisible(false);
 
-    // Create HP bar (auto-hides when full)
-    this.hpBar = new HpBar(scene, {
+    // Create stat bars (HP, MP, XP)
+    this.statBars = new UnitStatBars(scene, {
       width: MINION_RADIUS * 2,
-      offsetY: -MINION_RADIUS - 6
+      offsetY: -MINION_RADIUS - 12,
+      barHeight: 3,
     });
   }
 
   public getPrimaryAttack(): AttackConfig {
-    return DEFAULT_ATTACK;
+    const stats = this.leveling.getStats();
+    return {
+      damage: Math.floor(stats.strength),
+      cooldownMs: DEFAULT_ATTACK_COOLDOWN,
+      effectType: 'melee'
+    };
   }
 
   public select(): void {
@@ -196,14 +234,14 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
   }
 
   public getMaxHp(): number {
-    return this.maxHp;
+    return this.leveling.getStats().maxHp;
   }
 
   public takeDamage(amount: number): void {
     if (this.defeated) return;
 
     this.hp = Math.max(0, this.hp - amount);
-    this.updateHpBar();
+    this.updateStatBars();
 
     // Visual feedback: flash red
     this.scene.tweens.add({
@@ -220,6 +258,20 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
 
   public isDefeated(): boolean {
     return this.defeated;
+  }
+
+  /**
+   * Add XP to this minion
+   */
+  public addXp(amount: number): void {
+    this.leveling.addXp(amount);
+  }
+
+  /**
+   * Get the current level
+   */
+  public getLevel(): number {
+    return this.leveling.getLevel();
   }
 
   /**
@@ -251,8 +303,18 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
     });
   }
 
-  private updateHpBar(): void {
-    this.hpBar.update(this.x, this.y, this.hp, this.maxHp);
+  private updateStatBars(): void {
+    const stats = this.leveling.getStats();
+    this.statBars.update(
+      this.x,
+      this.y,
+      this.hp,
+      stats.maxHp,
+      this.mp,
+      stats.maxMp,
+      this.leveling.getXp(),
+      this.leveling.getXpToNextLevel()
+    );
   }
 
   /**
@@ -307,7 +369,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
     }
 
     // Update HP bar position
-    this.updateHpBar();
+    this.updateStatBars();
 
     // Auto-aggro: check for nearby enemies when truly idle (no active command)
     if (this.autoAggroEnabled && !this.hasActiveCommand && !this.isInCombat() && this.threatTracker) {
@@ -423,7 +485,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
 
   destroy(fromScene?: boolean): void {
     this.selectionCircle?.destroy();
-    this.hpBar.destroy();
+    this.statBars.destroy();
     super.destroy(fromScene);
   }
 }

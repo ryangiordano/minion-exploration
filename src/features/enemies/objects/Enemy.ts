@@ -1,31 +1,39 @@
 import Phaser from 'phaser';
 import { Combatable, AttackConfig, AggroCapable } from '../../../core/types/interfaces';
-import { HpBar, AttackBehavior, ThreatTracker, TargetedMovement } from '../../../core/components';
+import { HpBar, AttackBehavior, ThreatTracker, TargetedMovement, LevelingSystem, defaultXpCurve } from '../../../core/components';
 
 const ENEMY_RADIUS = 16;
 const DEFAULT_AGGRO_RADIUS = 150;
 const DEFAULT_ATTACK_RANGE = 5; // Must be within this distance (beyond touching) to attack
 const DEFAULT_SPEED = 80;
+const DEFAULT_ATTACK_COOLDOWN = 1000;
 
-// Default enemy attack stats (slower than minions)
-const DEFAULT_ATTACK: AttackConfig = {
-  damage: 1,
-  cooldownMs: 1000,
-  effectType: 'melee'
+// Default enemy base stats at level 1
+const DEFAULT_BASE_STATS = {
+  maxHp: 3,
+  maxMp: 0,        // Enemies don't use MP (yet)
+  strength: 1,     // Base damage
+  dexterity: 1,
+  magic: 1,
+  resilience: 1,
+};
+
+// Stat growth per level for enemies
+const DEFAULT_STAT_GROWTH = {
+  maxHp: 2,        // Enemies get tankier faster
+  strength: 0.5,
 };
 
 export interface EnemyConfig {
-  maxHp?: number;
-  damage?: number;
-  attackCooldown?: number;
+  level?: number;           // Starting level (default: 1)
   aggroRadius?: number;
   attackRange?: number;
   speed?: number;
 }
 
 export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, AggroCapable {
+  private leveling: LevelingSystem;
   private hp: number;
-  private maxHp: number;
   private defeated = false;
   private hpBar: HpBar;
   private attackBehavior: AttackBehavior;
@@ -35,11 +43,27 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
   private attackRange: number;
   private followAngleOffset = 0;
 
+  // Death callback
+  private onDeathCallback?: (enemy: Enemy) => void;
+
   constructor(scene: Phaser.Scene, x: number, y: number, config: EnemyConfig = {}) {
     super(scene, x, y, '');
 
-    this.maxHp = config.maxHp ?? 3;
-    this.hp = this.maxHp;
+    // Initialize leveling system
+    this.leveling = new LevelingSystem({
+      baseStats: DEFAULT_BASE_STATS,
+      growthPerLevel: DEFAULT_STAT_GROWTH,
+      xpCurve: defaultXpCurve,
+    });
+
+    // Set starting level if specified
+    if (config.level && config.level > 1) {
+      this.leveling.setLevel(config.level);
+    }
+
+    // Initialize HP from stats
+    const stats = this.leveling.getStats();
+    this.hp = stats.maxHp;
     this.attackRange = config.attackRange ?? DEFAULT_ATTACK_RANGE;
 
     // Add to scene with physics
@@ -78,13 +102,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
     // Make interactive for click detection
     this.setInteractive({ useHandCursor: true });
 
-    // Setup attack behavior for fighting back
-    const attackConfig: AttackConfig = {
-      damage: config.damage ?? DEFAULT_ATTACK.damage,
-      cooldownMs: config.attackCooldown ?? DEFAULT_ATTACK.cooldownMs,
-      effectType: 'melee'
-    };
-    this.attackBehavior = new AttackBehavior({ defaultAttack: attackConfig });
+    // Setup attack behavior for fighting back (damage from stats)
+    this.attackBehavior = new AttackBehavior({
+      defaultAttack: this.getPrimaryAttack()
+    });
 
     // Visual feedback when attacking
     this.attackBehavior.onAttack(() => {
@@ -122,7 +143,16 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
   }
 
   private updateHpBar(): void {
-    this.hpBar.update(this.x, this.y, this.hp, this.maxHp);
+    this.hpBar.update(this.x, this.y, this.hp, this.getMaxHp());
+  }
+
+  public getPrimaryAttack(): AttackConfig {
+    const stats = this.leveling.getStats();
+    return {
+      damage: Math.floor(stats.strength),
+      cooldownMs: DEFAULT_ATTACK_COOLDOWN,
+      effectType: 'melee'
+    };
   }
 
   public getRadius(): number {
@@ -138,7 +168,11 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
   }
 
   public getMaxHp(): number {
-    return this.maxHp;
+    return this.leveling.getStats().maxHp;
+  }
+
+  public getLevel(): number {
+    return this.leveling.getLevel();
   }
 
   public takeDamage(amount: number): void {
@@ -162,6 +196,13 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
 
   public isDefeated(): boolean {
     return this.defeated;
+  }
+
+  /**
+   * Set callback for when this enemy dies
+   */
+  public onDeath(callback: (enemy: Enemy) => void): void {
+    this.onDeathCallback = callback;
   }
 
   /**
@@ -273,6 +314,11 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
 
     this.defeated = true;
     this.movement.stop();
+
+    // Fire death callback before animation (for XP distribution while attackers still registered)
+    if (this.onDeathCallback) {
+      this.onDeathCallback(this);
+    }
 
     // Death animation
     this.scene.tweens.add({

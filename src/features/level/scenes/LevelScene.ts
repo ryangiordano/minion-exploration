@@ -5,7 +5,7 @@ import { Treasure } from '../../treasure';
 import { Enemy } from '../../enemies';
 import { StaminaBar } from '../ui/StaminaBar';
 import { ScoreDisplay } from '../ui/ScoreDisplay';
-import { SelectionManager, WhistleSelection, CombatManager } from '../../../core/components';
+import { SelectionManager, WhistleSelection, CombatManager, CombatXpTracker } from '../../../core/components';
 import { MoveCommand, CollectCommand, AttackCommand, FollowCommand } from '../../../core/commands';
 
 // Command pulse colors by action type
@@ -24,6 +24,7 @@ export class LevelScene extends Phaser.Scene {
   private enemies: Enemy[] = [];
   private selectionManager = new SelectionManager();
   private combatManager = new CombatManager();
+  private xpTracker = new CombatXpTracker({ baseXpPerKill: 10 });
   private whistleSelection?: WhistleSelection;
 
   constructor() {
@@ -188,7 +189,10 @@ export class LevelScene extends Phaser.Scene {
   }
 
   private spawnMinion(x: number, y: number): Minion {
-    const minion = new Minion(this, x, y, { combatManager: this.combatManager });
+    const minion = new Minion(this, x, y, {
+      combatManager: this.combatManager,
+      xpTracker: this.xpTracker,
+    });
     this.minions.push(minion);
 
     // Setup selection handling
@@ -268,30 +272,75 @@ export class LevelScene extends Phaser.Scene {
   }
 
   private spawnEnemies(worldWidth: number, worldHeight: number): void {
-    // Spawn 5 enemies randomly around the world
-    for (let i = 0; i < 5; i++) {
-      const x = Phaser.Math.Between(100, worldWidth - 100);
-      const y = Phaser.Math.Between(100, worldHeight - 100);
+    const playerSpawnX = worldWidth / 2;
+    const playerSpawnY = worldHeight / 2;
+    const safeRadius = 400; // Don't spawn enemies within this radius of player start
 
-      const enemy = new Enemy(this, x, y, { maxHp: 10 });
-      this.enemies.push(enemy);
-
-      // Setup right-click to attack
-      enemy.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
-        if (pointer.rightButtonDown() && this.selectionManager.hasSelection()) {
-          // Show attack feedback
-          this.showClickPulse(enemy.x, enemy.y, PULSE_COLORS.attack);
-          const attackCommand = new AttackCommand(enemy, () => {
-            // Remove from enemies array
-            const index = this.enemies.indexOf(enemy);
-            if (index > -1) {
-              this.enemies.splice(index, 1);
-            }
-          });
-          this.selectionManager.issueCommand(attackCommand);
-          event.stopPropagation();
-        }
-      });
+    // Spawn weak enemies (level 1) far from player - good for XP testing
+    for (let i = 0; i < 3; i++) {
+      const pos = this.getSpawnPositionAwayFrom(
+        playerSpawnX, playerSpawnY, safeRadius,
+        worldWidth, worldHeight
+      );
+      this.spawnEnemy(pos.x, pos.y, 1);
     }
+
+    // Spawn medium enemies (level 3) even further
+    for (let i = 0; i < 2; i++) {
+      const pos = this.getSpawnPositionAwayFrom(
+        playerSpawnX, playerSpawnY, safeRadius + 100,
+        worldWidth, worldHeight
+      );
+      this.spawnEnemy(pos.x, pos.y, 3);
+    }
+  }
+
+  private getSpawnPositionAwayFrom(
+    avoidX: number, avoidY: number, minDistance: number,
+    worldWidth: number, worldHeight: number
+  ): { x: number; y: number } {
+    let x: number, y: number;
+    let attempts = 0;
+    do {
+      x = Phaser.Math.Between(100, worldWidth - 100);
+      y = Phaser.Math.Between(100, worldHeight - 100);
+      attempts++;
+    } while (
+      Phaser.Math.Distance.Between(x, y, avoidX, avoidY) < minDistance &&
+      attempts < 50
+    );
+    return { x, y };
+  }
+
+  private spawnEnemy(x: number, y: number, level: number): Enemy {
+    const enemy = new Enemy(this, x, y, { level });
+    this.enemies.push(enemy);
+
+    // Handle enemy death - distribute XP and remove from array
+    enemy.onDeath((deadEnemy) => {
+      // Distribute XP to all minions that participated in this fight
+      this.xpTracker.distributeXp(deadEnemy);
+
+      // Remove from enemies array
+      const index = this.enemies.indexOf(deadEnemy);
+      if (index > -1) {
+        this.enemies.splice(index, 1);
+      }
+    });
+
+    // Setup right-click to attack
+    enemy.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
+      if (pointer.rightButtonDown() && this.selectionManager.hasSelection()) {
+        // Show attack feedback
+        this.showClickPulse(enemy.x, enemy.y, PULSE_COLORS.attack);
+        const attackCommand = new AttackCommand(enemy, () => {
+          // onDeath callback handles cleanup now
+        });
+        this.selectionManager.issueCommand(attackCommand);
+        event.stopPropagation();
+      }
+    });
+
+    return enemy;
   }
 }
