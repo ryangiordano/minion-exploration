@@ -45,10 +45,17 @@ export class SelectionManager {
   }
 
   /**
-   * Select multiple units at once
+   * Select multiple units at once (clears previous selection)
    */
   public selectMultiple(units: Unit[]): void {
     this.clearSelection();
+    units.forEach(unit => this.addToSelection(unit));
+  }
+
+  /**
+   * Add multiple units to the current selection (additive)
+   */
+  public addMultipleToSelection(units: Unit[]): void {
     units.forEach(unit => this.addToSelection(unit));
   }
 

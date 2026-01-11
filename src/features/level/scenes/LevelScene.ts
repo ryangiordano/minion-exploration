@@ -5,7 +5,7 @@ import { Treasure } from '../../treasure';
 import { Enemy } from '../../enemies';
 import { StaminaBar } from '../ui/StaminaBar';
 import { ScoreDisplay } from '../ui/ScoreDisplay';
-import { SelectionManager } from '../../../core/components';
+import { SelectionManager, WhistleSelection } from '../../../core/components';
 import { MoveCommand, CollectCommand, AttackCommand } from '../../../core/commands';
 
 // Command pulse colors by action type
@@ -23,9 +23,7 @@ export class LevelScene extends Phaser.Scene {
   private treasures: Treasure[] = [];
   private enemies: Enemy[] = [];
   private selectionManager = new SelectionManager();
-  private whistleRadius = 100;
-  private whistleCircle?: Phaser.GameObjects.Graphics;
-  private spaceKey?: Phaser.Input.Keyboard.Key;
+  private whistleSelection?: WhistleSelection;
 
   constructor() {
     super({ key: 'LevelScene' });
@@ -131,6 +129,9 @@ export class LevelScene extends Phaser.Scene {
 
     // Update all minions with delta time for combat cooldowns
     this.minions.forEach(minion => minion.update(delta));
+
+    // Update whistle selection animation
+    this.whistleSelection?.update(delta);
   }
 
   private createReferenceGrid(worldWidth: number, worldHeight: number): void {
@@ -163,50 +164,13 @@ export class LevelScene extends Phaser.Scene {
   }
 
   private setupWhistleSelection(): void {
-    // Create whistle circle graphic (hidden by default)
-    this.whistleCircle = this.add.graphics();
-    this.whistleCircle.setVisible(false);
-
-    // Setup Space key
-    if (this.input.keyboard) {
-      this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-
-      this.spaceKey.on('down', () => {
-        // Show whistle circle
-        this.updateWhistleCircle();
-        this.whistleCircle?.setVisible(true);
-
-        // Select all minions within radius of cursor
-        const pointer = this.input.activePointer;
-        const minionsInRadius = this.minions.filter(minion => {
-          const distance = Phaser.Math.Distance.Between(
-            pointer.worldX, pointer.worldY,
-            minion.x, minion.y
-          );
-          return distance <= this.whistleRadius;
-        });
-
-        // Replace selection with minions in radius
-        this.selectionManager.clearSelection();
-        this.selectionManager.selectMultiple(minionsInRadius);
+    this.whistleSelection = new WhistleSelection(this)
+      .bindKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
+      .setSelectableSource(() => this.minions)
+      .onSelect((units) => {
+        // Additive selection - don't clear existing
+        this.selectionManager.addMultipleToSelection(units as Minion[]);
       });
-
-      this.spaceKey.on('up', () => {
-        // Hide whistle circle
-        this.whistleCircle?.setVisible(false);
-      });
-    }
-  }
-
-  private updateWhistleCircle(): void {
-    if (!this.whistleCircle) return;
-
-    const pointer = this.input.activePointer;
-    this.whistleCircle.clear();
-    this.whistleCircle.lineStyle(3, 0xffff00, 0.8);
-    this.whistleCircle.strokeCircle(pointer.worldX, pointer.worldY, this.whistleRadius);
-    this.whistleCircle.fillStyle(0xffff00, 0.1);
-    this.whistleCircle.fillCircle(pointer.worldX, pointer.worldY, this.whistleRadius);
   }
 
   private showClickPulse(x: number, y: number, color: number = PULSE_COLORS.move): void {

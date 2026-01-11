@@ -3,3 +3,4 @@ export { TargetedMovement, type TargetedMovementConfig } from './TargetedMovemen
 export { SelectionManager } from './SelectionManager';
 export { AttackBehavior, type AttackBehaviorConfig } from './AttackBehavior';
 export { HpBar, type HpBarConfig } from './HpBar';
+export { WhistleSelection, type WhistleSelectionConfig } from './WhistleSelection';
