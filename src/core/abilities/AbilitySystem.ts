@@ -98,13 +98,23 @@ export class AbilitySystem {
 
   /**
    * Dispatch onAttackHit to all equipped gems
+   * @param dealDamage - For ranged attacks, call this to apply damage. Undefined for melee.
+   * @param damageDeferred - Whether damage is deferred (ranged) or already applied (melee)
    */
-  public onAttackHit(target: Combatable, damage: number, scene: Phaser.Scene): void {
+  public onAttackHit(
+    target: Combatable,
+    damage: number,
+    scene: Phaser.Scene,
+    dealDamage?: () => void,
+    damageDeferred: boolean = false
+  ): void {
     const context: AttackHitContext = {
       attacker: this.owner,
       target,
       damage,
-      scene
+      scene,
+      dealDamage,
+      damageDeferred,
     };
 
     for (const gem of this.getEquippedGems()) {

@@ -1,7 +1,7 @@
-import Phaser from 'phaser';
 import { AbilityDefinition, GemOwner } from './types';
 import { Combatable } from '../types/interfaces';
-import { GameEvents, HealEvent, DamageEvent } from '../components/GameEventManager';
+import { GameEvents, DamageEvent } from '../components/GameEventManager';
+import { healEffect } from './effects';
 
 /**
  * Context provided to ActionResolver each frame
@@ -313,15 +313,12 @@ export class ActionResolver {
     // Apply effect
     switch (ability.effectType) {
       case 'heal':
-        if (target && 'heal' in target && typeof target.heal === 'function') {
-          (target as GemOwner).heal(power);
-          this.showHealEffect(scene, owner, target as GemOwner);
-          // Emit heal event for floating text
-          scene.events.emit(GameEvents.HEAL, {
-            x: target.x,
-            y: target.y,
-            amount: power,
-          } as HealEvent);
+        if (target) {
+          healEffect(
+            { executor: owner, scene },
+            [target],
+            { power }
+          );
         }
         break;
 
@@ -347,31 +344,4 @@ export class ActionResolver {
     this.cooldowns.set(ability.id, ability.cooldownMs);
   }
 
-  /**
-   * Show visual effect for healing
-   */
-  private showHealEffect(scene: Phaser.Scene, healer: GemOwner, target: GemOwner): void {
-    // Create a small green particle/line from healer to target
-    const line = scene.add.graphics();
-    line.lineStyle(2, 0x00ff88, 0.8);
-    line.lineBetween(healer.x, healer.y, target.x, target.y);
-
-    // Fade out
-    scene.tweens.add({
-      targets: line,
-      alpha: 0,
-      duration: 300,
-      onComplete: () => line.destroy(),
-    });
-
-    // Small burst at target
-    const burst = scene.add.circle(target.x, target.y, 8, 0x00ff88, 0.6);
-    scene.tweens.add({
-      targets: burst,
-      scale: 2,
-      alpha: 0,
-      duration: 300,
-      onComplete: () => burst.destroy(),
-    });
-  }
 }

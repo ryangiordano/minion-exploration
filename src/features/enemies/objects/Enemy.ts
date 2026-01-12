@@ -109,8 +109,13 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
     });
 
     // Visual feedback when attacking
-    this.attackBehavior.onAttack(() => {
+    this.attackBehavior.onAttack((ctx) => {
       this.showAttackEffect();
+      // Enemies are currently melee-only, but if they had ranged attacks,
+      // we'd need to handle deferred damage here (or via an ability system)
+      if (ctx.damageDeferred && ctx.dealDamage) {
+        ctx.dealDamage();
+      }
     });
 
     // When current target dies, find next highest threat

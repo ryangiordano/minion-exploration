@@ -156,12 +156,18 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
     });
 
     // Visual feedback when attacking, trigger ability hooks, and record participation for XP
-    this.attackBehavior.onAttack((target, damage) => {
-      this.showAttackEffect(target);
-      // Trigger ability system hooks (e.g., knockback)
-      this.abilitySystem.onAttackHit(target, damage, scene);
+    this.attackBehavior.onAttack((ctx) => {
+      this.showAttackEffect(ctx.target);
+      // Trigger ability system hooks (e.g., knockback, ranged projectile)
+      this.abilitySystem.onAttackHit(
+        ctx.target,
+        ctx.damage,
+        scene,
+        ctx.dealDamage,
+        ctx.damageDeferred
+      );
       // Record combat participation for XP distribution
-      this.xpTracker?.recordParticipation(this, target);
+      this.xpTracker?.recordParticipation(this, ctx.target);
     });
 
     // Handle target defeated

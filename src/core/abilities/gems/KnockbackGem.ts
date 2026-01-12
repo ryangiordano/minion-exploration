@@ -1,5 +1,5 @@
-import Phaser from 'phaser';
 import { AbilityGem, AttackHitContext } from '../types';
+import { knockbackEffect } from '../effects';
 
 /**
  * Attack modifier gem that pushes enemies back on hit
@@ -18,20 +18,16 @@ export class KnockbackGem implements AbilityGem {
   }
 
   onAttackHit(context: AttackHitContext): void {
-    const { attacker, target, scene } = context;
-
-    // Calculate knockback direction (away from attacker)
-    const angle = Phaser.Math.Angle.Between(attacker.x, attacker.y, target.x, target.y);
-    const newX = target.x + Math.cos(angle) * this.knockbackDistance;
-    const newY = target.y + Math.sin(angle) * this.knockbackDistance;
-
-    // Animate the knockback
-    scene.tweens.add({
-      targets: target,
-      x: newX,
-      y: newY,
-      duration: this.knockbackDuration,
-      ease: 'Power2'
-    });
+    knockbackEffect(
+      {
+        executor: context.attacker,
+        scene: context.scene,
+      },
+      [context.target],
+      {
+        distance: this.knockbackDistance,
+        duration: this.knockbackDuration,
+      }
+    );
   }
 }

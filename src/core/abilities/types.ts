@@ -51,6 +51,15 @@ export interface AttackHitContext {
   target: Combatable;
   damage: number;
   scene: Phaser.Scene;
+  /**
+   * For ranged attacks, call this to apply damage on projectile impact.
+   * For melee attacks, damage is already applied and this is undefined.
+   */
+  dealDamage?: () => void;
+  /**
+   * Whether damage has been deferred (ranged) or already applied (melee).
+   */
+  damageDeferred: boolean;
 }
 
 /**

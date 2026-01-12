@@ -11,4 +11,9 @@ const config: Phaser.Types.Core.GameConfig = {
   ]
 };
 
-new Phaser.Game(config);
+const game = new Phaser.Game(config);
+
+// Disable right-click context menu on the game canvas
+game.canvas.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+});

@@ -12,11 +12,28 @@ export interface AttackUpdateContext {
   effectiveAttack?: AttackConfig;  // Optional override for dynamic attack configs
 }
 
+/**
+ * Context passed to attack callback
+ */
+export interface AttackCallbackContext {
+  target: Combatable;
+  damage: number;
+  /**
+   * For ranged attacks, call this to apply damage on projectile impact.
+   * For melee attacks, damage is already applied and this is undefined.
+   */
+  dealDamage?: () => void;
+  /**
+   * Whether damage has been deferred (ranged) or already applied (melee).
+   */
+  damageDeferred: boolean;
+}
+
 export class AttackBehavior {
   private target?: Combatable;
   private cooldownTimer = 0;
   private readonly defaultAttack: AttackConfig;
-  private onAttackCallback?: (target: Combatable, damage: number) => void;
+  private onAttackCallback?: (context: AttackCallbackContext) => void;
   private onTargetDefeatedCallback?: (target: Combatable) => void;
 
   constructor(config: AttackBehaviorConfig) {
@@ -24,9 +41,9 @@ export class AttackBehavior {
   }
 
   /**
-   * Set a callback for when an attack lands (for visual feedback)
+   * Set a callback for when an attack is initiated (for visual feedback and ability hooks)
    */
-  public onAttack(callback: (target: Combatable, damage: number) => void): void {
+  public onAttack(callback: (context: AttackCallbackContext) => void): void {
     this.onAttackCallback = callback;
   }
 
@@ -118,14 +135,50 @@ export class AttackBehavior {
 
     // Store reference before damage - target may trigger callbacks that clear this.target
     const target = this.target;
+    const isRanged = attack.effectType === 'ranged';
 
-    target.takeDamage(attack.damage);
-    this.onAttackCallback?.(target, attack.damage);
+    if (isRanged) {
+      // For ranged attacks, defer damage until projectile impact
+      let damageDealt = false;
+      const dealDamage = () => {
+        if (damageDealt) return; // Prevent double damage
+        damageDealt = true;
 
-    // Check if we just killed the target (and we're still tracking it)
-    if (this.target === target && target.isDefeated()) {
-      this.disengage();
-      this.onTargetDefeatedCallback?.(target);
+        // Check if target is still valid
+        if (target.isDefeated()) return;
+
+        target.takeDamage(attack.damage);
+
+        // Check if we just killed the target
+        if (target.isDefeated()) {
+          if (this.target === target) {
+            this.disengage();
+          }
+          this.onTargetDefeatedCallback?.(target);
+        }
+      };
+
+      this.onAttackCallback?.({
+        target,
+        damage: attack.damage,
+        dealDamage,
+        damageDeferred: true,
+      });
+    } else {
+      // For melee attacks, apply damage immediately
+      target.takeDamage(attack.damage);
+
+      this.onAttackCallback?.({
+        target,
+        damage: attack.damage,
+        damageDeferred: false,
+      });
+
+      // Check if we just killed the target (and we're still tracking it)
+      if (this.target === target && target.isDefeated()) {
+        this.disengage();
+        this.onTargetDefeatedCallback?.(target);
+      }
     }
   }
 }

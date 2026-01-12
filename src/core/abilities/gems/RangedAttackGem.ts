@@ -1,6 +1,6 @@
-import Phaser from 'phaser';
 import { AbilityGem, AttackHitContext } from '../types';
 import { AttackConfig } from '../../types/interfaces';
+import { projectileEffect } from '../effects';
 
 export interface RangedAttackConfig {
   projectileSpeed?: number;    // Pixels per second (default: 300)
@@ -38,51 +38,21 @@ export class RangedAttackGem implements AbilityGem {
   }
 
   onAttackHit(context: AttackHitContext): void {
-    const { attacker, target, scene } = context;
-
-    // Create projectile visual
-    const projectile = scene.add.circle(
-      attacker.x,
-      attacker.y,
-      this.projectileSize,
-      this.projectileColor
-    );
-
-    // Add a subtle glow/trail effect
-    projectile.setAlpha(0.9);
-
-    // Calculate travel time based on distance and speed
-    const distance = Phaser.Math.Distance.Between(
-      attacker.x, attacker.y,
-      target.x, target.y
-    );
-    const duration = (distance / this.projectileSpeed) * 1000;
-
-    // Animate projectile to target
-    scene.tweens.add({
-      targets: projectile,
-      x: target.x,
-      y: target.y,
-      duration: Math.max(50, duration), // Minimum 50ms
-      ease: 'Linear',
-      onComplete: () => {
-        // Small impact effect
-        this.createImpactEffect(scene, target.x, target.y);
-        projectile.destroy();
+    projectileEffect(
+      {
+        executor: context.attacker,
+        scene: context.scene,
+      },
+      [context.target],
+      {
+        speed: this.projectileSpeed,
+        size: this.projectileSize,
+        color: this.projectileColor,
+        onImpact: () => {
+          // Apply damage when projectile hits
+          context.dealDamage?.();
+        },
       }
-    });
-  }
-
-  private createImpactEffect(scene: Phaser.Scene, x: number, y: number): void {
-    const impact = scene.add.circle(x, y, this.projectileSize * 2, this.projectileColor, 0.8);
-
-    scene.tweens.add({
-      targets: impact,
-      scale: 2,
-      alpha: 0,
-      duration: 150,
-      ease: 'Power2',
-      onComplete: () => impact.destroy()
-    });
+    );
   }
 }
