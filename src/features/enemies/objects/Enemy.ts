@@ -6,13 +6,13 @@ const ENEMY_RADIUS = 16;
 const DEFAULT_AGGRO_RADIUS = 150;
 const DEFAULT_ATTACK_RANGE = 5; // Must be within this distance (beyond touching) to attack
 const DEFAULT_SPEED = 80;
-const DEFAULT_ATTACK_COOLDOWN = 1500;  // Slower attacks
+const DEFAULT_ATTACK_COOLDOWN = 2000;  // Slow attacks - enemies are fodder, not threats
 
 // Default enemy base stats at level 1
 const DEFAULT_BASE_STATS = {
-  maxHp: 4,        // Tanky but slow - feel like obstacles
+  maxHp: 3,        // Weaker - meant to be cut through in groups
   maxMp: 0,        // Enemies don't use MP (yet)
-  strength: 1,     // Same damage as minions, but much slower attacks
+  strength: 1,     // Low damage, slow attacks - quantity over quality
   dexterity: 1,
   magic: 1,
   resilience: 1,
@@ -20,8 +20,8 @@ const DEFAULT_BASE_STATS = {
 
 // Stat growth per level for enemies
 const DEFAULT_STAT_GROWTH = {
-  maxHp: 2,        // Enemies get tankier faster
-  strength: 0.5,
+  maxHp: 1.5,      // Slower HP scaling
+  strength: 0.3,   // Slower strength scaling
 };
 
 export interface EnemyConfig {

@@ -298,22 +298,48 @@ export class LevelScene extends Phaser.Scene {
     const playerSpawnY = worldHeight / 2;
     const safeRadius = 400; // Don't spawn enemies within this radius of player start
 
-    // Spawn weak enemies (level 1) far from player - good for XP testing
-    for (let i = 0; i < 3; i++) {
-      const pos = this.getSpawnPositionAwayFrom(
-        playerSpawnX, playerSpawnY, safeRadius,
-        worldWidth, worldHeight
-      );
-      this.spawnEnemy(pos.x, pos.y, 1);
-    }
+    // Spawn clusters of weak enemies - more satisfying to cut through groups
+    // Cluster 1: 4 level 1 enemies
+    this.spawnEnemyCluster(
+      playerSpawnX, playerSpawnY, safeRadius,
+      worldWidth, worldHeight,
+      4, 1
+    );
 
-    // Spawn medium enemies (level 3) even further
-    for (let i = 0; i < 2; i++) {
-      const pos = this.getSpawnPositionAwayFrom(
-        playerSpawnX, playerSpawnY, safeRadius + 100,
-        worldWidth, worldHeight
-      );
-      this.spawnEnemy(pos.x, pos.y, 3);
+    // Cluster 2: 3 level 1 enemies
+    this.spawnEnemyCluster(
+      playerSpawnX, playerSpawnY, safeRadius,
+      worldWidth, worldHeight,
+      3, 1
+    );
+
+    // Cluster 3: 3 level 2 enemies (slightly tougher pack)
+    this.spawnEnemyCluster(
+      playerSpawnX, playerSpawnY, safeRadius + 100,
+      worldWidth, worldHeight,
+      3, 2
+    );
+  }
+
+  private spawnEnemyCluster(
+    avoidX: number, avoidY: number, minDistance: number,
+    worldWidth: number, worldHeight: number,
+    count: number, level: number
+  ): void {
+    // Find cluster center
+    const center = this.getSpawnPositionAwayFrom(
+      avoidX, avoidY, minDistance,
+      worldWidth, worldHeight
+    );
+
+    // Spawn enemies around the center
+    const clusterRadius = 50;
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2;
+      const distance = Phaser.Math.Between(10, clusterRadius);
+      const x = center.x + Math.cos(angle) * distance;
+      const y = center.y + Math.sin(angle) * distance;
+      this.spawnEnemy(x, y, level);
     }
   }
 

@@ -446,6 +446,11 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Unit, Attack
    * Enter combat mode with a target
    */
   public enterCombat(target: Combatable, onDefeated: () => void): void {
+    // Clear follow state - combat command overrides follow
+    this.followingTarget = undefined;
+    this.persistentFollow = false;
+    this.hasActiveCommand = true;
+
     this.combatTarget = target;
     this.onCombatTargetDefeated = onDefeated;
     this.attackBehavior.engage(target);
