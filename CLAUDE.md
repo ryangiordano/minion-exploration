@@ -111,6 +111,40 @@ Your game design knowledge is grounded in the principles from Tynan Sylvester's 
 - Consider performance, especially for browser-based games
 - Write code that's easy to iterate on - games require constant tweaking
 
+### Code Documentation
+
+**Use JSDoc comments (`/** */`) for IntelliSense support:**
+
+- Document functions, methods, and class properties with `/** */` comments
+- Document config object properties and type definitions
+- These comments surface in IDE tooltips and autocomplete
+
+**Avoid inline comments on individual lines of logic:**
+
+- Prefer well-named, atomic methods over commented code blocks
+- If a block of logic needs a comment, extract it into a descriptively-named method
+- This encourages separation of concerns and self-documenting code
+
+**Examples:**
+```typescript
+// ✅ Good - JSDoc on method, logic is self-contained
+/** Calculates damage after applying armor reduction. */
+calculateDamage(baseDamage: number, armor: number): number {
+  const reduction = this.getArmorReduction(armor);
+  return Math.max(0, baseDamage - reduction);
+}
+
+// ❌ Bad - inline comments explaining logic step-by-step
+calculateDamage(baseDamage: number, armor: number): number {
+  // Calculate the armor reduction percentage
+  const reduction = armor * 0.05;
+  // Apply the reduction to base damage
+  const reduced = baseDamage * (1 - reduction);
+  // Make sure we don't go negative
+  return Math.max(0, reduced);
+}
+```
+
 ### Scope Management
 
 **Always fight scope creep**:

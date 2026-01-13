@@ -12,3 +12,5 @@ export { ThreatTracker, type ThreatTrackerConfig, type ThreatEntry } from './Thr
 export { LevelUpEffect, type LevelUpEffectConfig } from './LevelUpEffect';
 export { FloatingText, type FloatingTextConfig } from './FloatingText';
 export { GameEventManager, GameEvents, type FloatingTextEvent, type HealEvent, type DamageEvent, type LevelUpEvent } from './GameEventManager';
+export { EdgeScrollCamera, type EdgeScrollCameraConfig } from './EdgeScrollCamera';
+export { CursorTarget } from './CursorTarget';
