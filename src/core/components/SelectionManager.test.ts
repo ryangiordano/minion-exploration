@@ -1,14 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SelectionManager } from './SelectionManager';
-import { Unit, Followable } from '../types/interfaces';
-import { Command } from '../commands';
+import { Selectable } from '../types/interfaces';
 
-// Mock Unit implementation for testing
-class MockUnit implements Unit {
+// Mock Selectable implementation for testing
+class MockSelectable implements Selectable {
   private _selected = false;
-  public moveToX?: number;
-  public moveToY?: number;
-  public lastFollowTarget?: Followable;
 
   select(): void {
     this._selected = true;
@@ -21,37 +17,19 @@ class MockUnit implements Unit {
   isSelected(): boolean {
     return this._selected;
   }
-
-  moveTo(x: number, y: number): void {
-    this.moveToX = x;
-    this.moveToY = y;
-  }
-
-  followTarget(target: Followable, _onArrival: () => void): void {
-    this.lastFollowTarget = target;
-  }
-}
-
-// Mock Command for testing
-class MockCommand implements Command {
-  public executedUnits: Unit[] = [];
-
-  execute(unit: Unit): void {
-    this.executedUnits.push(unit);
-  }
 }
 
 describe('SelectionManager', () => {
   let manager: SelectionManager;
-  let unit1: MockUnit;
-  let unit2: MockUnit;
-  let unit3: MockUnit;
+  let unit1: MockSelectable;
+  let unit2: MockSelectable;
+  let unit3: MockSelectable;
 
   beforeEach(() => {
     manager = new SelectionManager();
-    unit1 = new MockUnit();
-    unit2 = new MockUnit();
-    unit3 = new MockUnit();
+    unit1 = new MockSelectable();
+    unit2 = new MockSelectable();
+    unit3 = new MockSelectable();
   });
 
   describe('select', () => {
@@ -187,32 +165,6 @@ describe('SelectionManager', () => {
     it('should work when no units are selected', () => {
       expect(() => manager.clearSelection()).not.toThrow();
       expect(manager.hasSelection()).toBe(false);
-    });
-  });
-
-  describe('issueCommand', () => {
-    it('should execute command on all selected units', () => {
-      manager.selectMultiple([unit1, unit2, unit3]);
-      const command = new MockCommand();
-
-      manager.issueCommand(command);
-
-      expect(command.executedUnits).toContain(unit1);
-      expect(command.executedUnits).toContain(unit2);
-      expect(command.executedUnits).toContain(unit3);
-      expect(command.executedUnits.length).toBe(3);
-    });
-
-    it('should not execute on unselected units', () => {
-      manager.select(unit1);
-      const command = new MockCommand();
-
-      manager.issueCommand(command);
-
-      expect(command.executedUnits).toContain(unit1);
-      expect(command.executedUnits).not.toContain(unit2);
-      expect(command.executedUnits).not.toContain(unit3);
-      expect(command.executedUnits.length).toBe(1);
     });
   });
 

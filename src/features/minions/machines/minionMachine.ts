@@ -1,29 +1,34 @@
 import { setup, assign } from 'xstate';
-import { Followable, Combatable } from '../../../core/types/interfaces';
+import { Combatable } from '../../../core/types/interfaces';
 
 /**
  * Context for the minion state machine
  */
 export interface MinionContext {
-  followTarget: Followable | null;
+  /** Destination point for move commands */
+  destination: { x: number; y: number } | null;
+  /** Current combat target */
   combatTarget: Combatable | null;
+  /** Original destination to return to after auto-combat */
+  returnDestination: { x: number; y: number } | null;
 }
 
 /**
  * Events that can be sent to the minion state machine
  */
 export type MinionEvent =
-  | { type: 'WHISTLE'; cursorTarget: Followable }  // Recruit idle minions OR recall fighting minions
-  | { type: 'DISMISS' }                             // Return to idle
-  | { type: 'ENEMY_NEARBY'; enemy: Combatable }     // Enemy detected while following
-  | { type: 'ENEMY_DEFEATED' };                     // Combat target died
+  | { type: 'MOVE_TO'; x: number; y: number }      // Click to move to location
+  | { type: 'ATTACK'; target: Combatable }         // Click to attack enemy
+  | { type: 'ENEMY_NEARBY'; enemy: Combatable }    // Auto-aggro while moving
+  | { type: 'ENEMY_DEFEATED' }                     // Combat target died
+  | { type: 'ARRIVED' };                           // Reached destination
 
 /**
- * Simplified state machine for minion behavior.
+ * State machine for minion behavior.
  *
  * States:
- * - idle: Standing still, not recruited
- * - following: Following the cursor, will auto-attack nearby enemies
+ * - idle: Standing still, waiting for commands
+ * - moving: Moving to a destination, will auto-attack nearby enemies
  * - fighting: Actively in combat with a specific enemy
  */
 export const minionMachine = setup({
@@ -32,77 +37,102 @@ export const minionMachine = setup({
     events: {} as MinionEvent,
   },
   actions: {
-    setFollowTarget: assign(({ event }) => {
-      if (event.type === 'WHISTLE') {
-        return { followTarget: event.cursorTarget };
+    setDestination: assign(({ event }) => {
+      if (event.type === 'MOVE_TO') {
+        return { destination: { x: event.x, y: event.y } };
       }
       return {};
     }),
-    setCombatTarget: assign(({ event }) => {
+    setCombatTarget: assign(({ event, context }) => {
+      if (event.type === 'ATTACK') {
+        return { combatTarget: event.target };
+      }
       if (event.type === 'ENEMY_NEARBY') {
-        return { combatTarget: event.enemy };
+        // Save current destination to return to after combat
+        return {
+          combatTarget: event.enemy,
+          returnDestination: context.destination,
+        };
       }
       return {};
     }),
     clearCombatTarget: assign({
       combatTarget: null,
     }),
-    clearAllTargets: assign({
-      followTarget: null,
+    restoreDestination: assign(({ context }) => ({
+      destination: context.returnDestination,
+      returnDestination: null,
       combatTarget: null,
+    })),
+    clearAll: assign({
+      destination: null,
+      combatTarget: null,
+      returnDestination: null,
+    }),
+    clearDestination: assign({
+      destination: null,
     }),
   },
 }).createMachine({
   id: 'minion',
   initial: 'idle',
   context: {
-    followTarget: null,
+    destination: null,
     combatTarget: null,
+    returnDestination: null,
   },
   states: {
     idle: {
       on: {
-        WHISTLE: {
-          target: 'following',
-          actions: 'setFollowTarget',
+        MOVE_TO: {
+          target: 'moving',
+          actions: 'setDestination',
         },
-      },
-    },
-    following: {
-      on: {
-        WHISTLE: {
-          // Re-whistling updates the follow target
-          actions: 'setFollowTarget',
-        },
-        DISMISS: {
-          target: 'idle',
-          actions: 'clearAllTargets',
-        },
-        ENEMY_NEARBY: {
+        ATTACK: {
           target: 'fighting',
           actions: 'setCombatTarget',
         },
       },
     },
+    moving: {
+      on: {
+        MOVE_TO: {
+          // New move command overrides current
+          actions: 'setDestination',
+        },
+        ATTACK: {
+          target: 'fighting',
+          actions: 'setCombatTarget',
+        },
+        ENEMY_NEARBY: {
+          target: 'fighting',
+          actions: 'setCombatTarget',
+        },
+        ARRIVED: {
+          target: 'idle',
+          actions: 'clearDestination',
+        },
+      },
+    },
     fighting: {
       on: {
-        WHISTLE: {
-          // Whistle recalls from combat back to following
-          target: 'following',
-          actions: ['clearCombatTarget', 'setFollowTarget'],
+        MOVE_TO: {
+          // Move command cancels combat
+          target: 'moving',
+          actions: ['clearCombatTarget', 'setDestination'],
         },
-        DISMISS: {
-          target: 'idle',
-          actions: 'clearAllTargets',
+        ATTACK: {
+          // New attack target
+          actions: 'setCombatTarget',
         },
         ENEMY_DEFEATED: {
-          // Return to following after combat
-          target: 'following',
-          actions: 'clearCombatTarget',
+          // Return to moving if we had a destination, otherwise idle
+          target: 'moving',
+          actions: 'restoreDestination',
         },
       },
     },
   },
 });
 
-export type MinionState = 'idle' | 'following' | 'fighting';
+export type MinionState = 'idle' | 'moving' | 'fighting';

@@ -2,8 +2,16 @@ import Phaser from 'phaser';
 import { Minion } from '../../minions';
 import { Treasure } from '../../treasure';
 import { Enemy, TargetDummy } from '../../enemies';
-import { CombatManager, CombatXpTracker, GameEventManager, EdgeScrollCamera, CursorTarget } from '../../../core/components';
+import { CombatManager, CombatXpTracker, GameEventManager, EdgeScrollCamera, WhistleSelection, SelectionManager } from '../../../core/components';
 import { KnockbackGem, HealPulseGem, VitalityGem, RangedAttackGem } from '../../../core/abilities';
+import { Combatable } from '../../../core/types/interfaces';
+
+// Visual feedback colors
+const CLICK_COLORS = {
+  move: 0xffff00,     // Yellow - move to location
+  attack: 0xff4444,   // Red - attack enemy
+  collect: 0x50c878,  // Green - collect treasure
+} as const;
 
 export class LevelScene extends Phaser.Scene {
   private minions: Minion[] = [];
@@ -14,9 +22,12 @@ export class LevelScene extends Phaser.Scene {
   private xpTracker = new CombatXpTracker({ baseXpPerKill: 10 });
   private eventManager?: GameEventManager;
 
-  // New control scheme
+  // Camera control
   private edgeScrollCamera!: EdgeScrollCamera;
-  private cursorTarget!: CursorTarget;
+
+  // Selection
+  private selectionManager = new SelectionManager();
+  private whistleSelection?: WhistleSelection;
 
   constructor() {
     super({ key: 'LevelScene' });
@@ -43,9 +54,6 @@ export class LevelScene extends Phaser.Scene {
       edgeSize: 50,
       scrollSpeed: 400,
     });
-
-    // Setup cursor target for minions to follow
-    this.cursorTarget = new CursorTarget(this);
 
     // Add visual reference grid
     this.createReferenceGrid(worldWidth, worldHeight);
@@ -84,12 +92,15 @@ export class LevelScene extends Phaser.Scene {
       }
     });
 
-    // Setup spacebar whistle
-    this.setupWhistle();
+    // Setup whistle selection (hold Space to grow selection circle)
+    this.setupWhistleSelection();
+
+    // Setup click controls
+    this.setupClickControls();
 
     // Add instructions
     const instructions = this.add.text(10, 10,
-      'Space: Whistle minions to cursor | Mouse edges: Pan camera',
+      'Hold Space: Select | Left-click: Deselect | Right-click: Move/Attack | Mouse edges: Pan',
       {
         fontSize: '12px',
         color: '#ffffff',
@@ -104,8 +115,8 @@ export class LevelScene extends Phaser.Scene {
     // Update edge-scroll camera
     this.edgeScrollCamera.update(delta);
 
-    // Update cursor target position
-    this.cursorTarget.update();
+    // Update whistle selection animation
+    this.whistleSelection?.update(delta);
 
     // Get active entities
     const activeMinions = this.minions.filter(m => !m.isDefeated());
@@ -123,32 +134,95 @@ export class LevelScene extends Phaser.Scene {
       enemy.setNearbyTargets(activeMinions);
       enemy.update(delta);
     });
+
+    // Check for treasure collection
+    this.checkTreasureCollection(activeMinions);
   }
 
-  private setupWhistle(): void {
-    if (!this.input.keyboard) return;
+  private checkTreasureCollection(minions: Minion[]): void {
+    const collectDistance = 25; // Distance at which treasure is collected
 
-    const spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-    spaceKey.on('down', () => {
-      // Send WHISTLE event to all minions with cursor as target
-      this.minions.forEach(minion => {
-        minion.send({ type: 'WHISTLE', cursorTarget: this.cursorTarget });
+    for (let i = this.treasures.length - 1; i >= 0; i--) {
+      const treasure = this.treasures[i];
+      if (treasure.isCollected()) continue;
+
+      for (const minion of minions) {
+        const dist = Phaser.Math.Distance.Between(minion.x, minion.y, treasure.x, treasure.y);
+        if (dist < collectDistance) {
+          treasure.collect();
+          this.treasures.splice(i, 1);
+          this.showClickEffect(treasure.x, treasure.y, CLICK_COLORS.collect);
+          break;
+        }
+      }
+    }
+  }
+
+  private setupWhistleSelection(): void {
+    this.whistleSelection = new WhistleSelection(this, {
+      maxRadius: 150,
+      growRate: 200,
+    })
+      .bindKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
+      .setSelectableSource(() => this.minions)
+      .onSelect((units) => {
+        // Clear previous selection and select new units
+        this.selectionManager.clearSelection();
+        this.selectionManager.addMultipleToSelection(units as Minion[]);
       });
+  }
 
-      // Visual feedback - expanding ring at cursor
-      this.showWhistleEffect(this.cursorTarget.x, this.cursorTarget.y);
+  private setupClickControls(): void {
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      // Left-click = deselect all
+      if (pointer.leftButtonDown()) {
+        this.selectionManager.clearSelection();
+      }
+
+      // Right-click on background = move command for selected minions
+      if (pointer.rightButtonDown() && this.selectionManager.hasSelection()) {
+        this.getSelectedMinions().forEach(minion => {
+          // Scatter minions around the target point
+          const offset = this.getScatterOffset();
+          minion.send({ type: 'MOVE_TO', x: pointer.worldX + offset.x, y: pointer.worldY + offset.y });
+        });
+        this.showClickEffect(pointer.worldX, pointer.worldY, CLICK_COLORS.move);
+      }
     });
   }
 
-  private showWhistleEffect(x: number, y: number): void {
-    const circle = this.add.circle(x, y, 20, 0xffff00, 0);
-    circle.setStrokeStyle(4, 0xffff00, 0.9);
+  /** Get a random offset for scattering minions around a target point */
+  private getScatterOffset(radius: number = 30): { x: number; y: number } {
+    const angle = Math.random() * Math.PI * 2;
+    const distance = Math.random() * radius;
+    return {
+      x: Math.cos(angle) * distance,
+      y: Math.sin(angle) * distance,
+    };
+  }
+
+  private getSelectedMinions(): Minion[] {
+    return this.minions.filter(m => m.isSelected());
+  }
+
+  private commandAttack(target: Combatable): void {
+    if (!this.selectionManager.hasSelection()) return;
+
+    this.getSelectedMinions().forEach(minion => {
+      minion.send({ type: 'ATTACK', target });
+    });
+    this.showClickEffect(target.x, target.y, CLICK_COLORS.attack);
+  }
+
+  private showClickEffect(x: number, y: number, color: number): void {
+    const circle = this.add.circle(x, y, 30, color, 0);
+    circle.setStrokeStyle(3, color, 0.8);
 
     this.tweens.add({
       targets: circle,
-      radius: 150,
+      radius: 8,
       alpha: 0,
-      duration: 400,
+      duration: 250,
       ease: 'Power2',
       onUpdate: () => {
         circle.setRadius(circle.radius);
@@ -198,6 +272,7 @@ export class LevelScene extends Phaser.Scene {
       if (index > -1) {
         this.minions.splice(index, 1);
       }
+      this.selectionManager.removeFromSelection(minion);
     });
 
     return minion;
@@ -210,6 +285,17 @@ export class LevelScene extends Phaser.Scene {
 
       const treasure = new Treasure(this, x, y);
       this.treasures.push(treasure);
+
+      // Right-click on treasure = move selected minions to collect
+      treasure.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
+        if (pointer.rightButtonDown() && this.selectionManager.hasSelection()) {
+          this.getSelectedMinions().forEach(minion => {
+            minion.send({ type: 'MOVE_TO', x: treasure.x, y: treasure.y });
+          });
+          this.showClickEffect(treasure.x, treasure.y, CLICK_COLORS.collect);
+          event.stopPropagation();
+        }
+      });
     }
   }
 
@@ -274,6 +360,14 @@ export class LevelScene extends Phaser.Scene {
       }
     });
 
+    // Right-click on enemy = attack command for selected minions
+    enemy.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
+      if (pointer.rightButtonDown()) {
+        this.commandAttack(enemy);
+        event.stopPropagation();
+      }
+    });
+
     return enemy;
   }
 
@@ -285,6 +379,14 @@ export class LevelScene extends Phaser.Scene {
       const index = this.targetDummies.indexOf(deadDummy);
       if (index > -1) {
         this.targetDummies.splice(index, 1);
+      }
+    });
+
+    // Right-click on dummy = attack command for selected minions
+    dummy.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
+      if (pointer.rightButtonDown()) {
+        this.commandAttack(dummy);
+        event.stopPropagation();
       }
     });
 

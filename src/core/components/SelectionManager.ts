@@ -1,16 +1,15 @@
-import { Unit } from '../types/interfaces';
-import { Command } from '../commands';
+import { Selectable } from '../types/interfaces';
 
 /**
- * Manages selection of units and issuing commands to selected units
+ * Manages selection of units
  */
 export class SelectionManager {
-  private selected: Set<Unit> = new Set();
+  private selected: Set<Selectable> = new Set();
 
   /**
    * Select a single unit (clears previous selection)
    */
-  public select(unit: Unit): void {
+  public select(unit: Selectable): void {
     this.clearSelection();
     this.addToSelection(unit);
   }
@@ -18,7 +17,7 @@ export class SelectionManager {
   /**
    * Add a unit to the current selection (multi-select)
    */
-  public addToSelection(unit: Unit): void {
+  public addToSelection(unit: Selectable): void {
     this.selected.add(unit);
     unit.select();
   }
@@ -26,7 +25,7 @@ export class SelectionManager {
   /**
    * Remove a unit from the selection
    */
-  public removeFromSelection(unit: Unit): void {
+  public removeFromSelection(unit: Selectable): void {
     if (this.selected.has(unit)) {
       this.selected.delete(unit);
       unit.deselect();
@@ -36,7 +35,7 @@ export class SelectionManager {
   /**
    * Toggle a unit's selection state
    */
-  public toggleSelection(unit: Unit): void {
+  public toggleSelection(unit: Selectable): void {
     if (this.selected.has(unit)) {
       this.removeFromSelection(unit);
     } else {
@@ -47,7 +46,7 @@ export class SelectionManager {
   /**
    * Select multiple units at once (clears previous selection)
    */
-  public selectMultiple(units: Unit[]): void {
+  public selectMultiple(units: Selectable[]): void {
     this.clearSelection();
     units.forEach(unit => this.addToSelection(unit));
   }
@@ -55,7 +54,7 @@ export class SelectionManager {
   /**
    * Add multiple units to the current selection (additive)
    */
-  public addMultipleToSelection(units: Unit[]): void {
+  public addMultipleToSelection(units: Selectable[]): void {
     units.forEach(unit => this.addToSelection(unit));
   }
 
@@ -70,7 +69,7 @@ export class SelectionManager {
   /**
    * Get all currently selected units
    */
-  public getSelected(): Unit[] {
+  public getSelected(): Selectable[] {
     return Array.from(this.selected);
   }
 
@@ -86,12 +85,5 @@ export class SelectionManager {
    */
   public getSelectionCount(): number {
     return this.selected.size;
-  }
-
-  /**
-   * Issue a command to all selected units
-   */
-  public issueCommand(command: Command): void {
-    this.selected.forEach(unit => command.execute(unit));
   }
 }

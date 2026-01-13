@@ -4,12 +4,13 @@ import { TargetedMovement } from '../../../core/components/TargetedMovement';
 import { AttackBehavior, AttackUpdateContext } from '../../../core/components/AttackBehavior';
 import { CombatManager } from '../../../core/components/CombatManager';
 import { LevelingSystem, UnitStatBars, defaultXpCurve, CombatXpTracker, LevelUpEffect, FloatingText } from '../../../core/components';
-import { Combatable, Attacker, AttackConfig } from '../../../core/types/interfaces';
+import { Combatable, Attacker, AttackConfig, Selectable } from '../../../core/types/interfaces';
 import { AbilitySystem, GemOwner, AbilityGem } from '../../../core/abilities';
 import { minionMachine, MinionContext, MinionEvent, MinionState } from '../machines/minionMachine';
 
 const MINION_RADIUS = 10;
 const DEFAULT_AGGRO_RADIUS = 100;
+const ARRIVAL_DISTANCE = 15;
 
 // Default minion base stats at level 1
 const DEFAULT_BASE_STATS = {
@@ -36,7 +37,7 @@ export interface MinionConfig {
   aggroRadius?: number;
 }
 
-export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Combatable, GemOwner {
+export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Combatable, GemOwner, Selectable {
   // State machine
   private actor: Actor<typeof minionMachine>;
 
@@ -49,7 +50,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
   // Movement and combat components
   private movement!: TargetedMovement;
   private attackBehavior!: AttackBehavior;
-  private followAngleOffset = 0;
+  private combatAngleOffset = 0;
 
   // Stats and leveling
   private leveling: LevelingSystem;
@@ -192,26 +193,22 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
    * Send an event to the state machine
    */
   send(event: MinionEvent): void {
+    const prevState = this.getState();
     this.actor.send(event);
 
-    // Handle side effects based on new state
     const newState = this.getState();
     const context = this.getContext();
 
-    if (newState === 'following' && context.followTarget) {
-      // Start following - randomize angle offset
-      this.followAngleOffset = Math.random() * Math.PI * 2;
-    }
-
-    if (newState === 'fighting' && context.combatTarget) {
-      // Enter combat
-      this.followAngleOffset = Math.random() * Math.PI * 2;
+    // Handle state transition side effects
+    if (newState === 'fighting' && context.combatTarget && prevState !== 'fighting') {
+      // Entering combat
+      this.combatAngleOffset = Math.random() * Math.PI * 2;
       this.attackBehavior.engage(context.combatTarget);
       this.combatManager?.startCombat(this, context.combatTarget);
     }
 
-    if (newState === 'idle') {
-      // Clear movement
+    if (newState === 'idle' && prevState !== 'idle') {
+      // Entering idle
       this.movement.stop();
     }
   }
@@ -393,8 +390,8 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
         // Just stand there
         break;
 
-      case 'following':
-        this.updateFollowing(context, delta);
+      case 'moving':
+        this.updateMoving(context);
         break;
 
       case 'fighting':
@@ -403,9 +400,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
     }
   }
 
-  private updateFollowing(context: MinionContext, _delta: number): void {
-    if (!context.followTarget) return;
-
+  private updateMoving(context: MinionContext): void {
     // Check for nearby enemies to auto-attack
     const nearestEnemy = this.findNearestEnemy();
     if (nearestEnemy) {
@@ -413,20 +408,29 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
       return;
     }
 
-    // Move toward follow target
-    const target = context.followTarget;
-    const perimeterDistance = target.getRadius() + MINION_RADIUS;
-    const targetX = target.x + Math.cos(this.followAngleOffset) * perimeterDistance;
-    const targetY = target.y + Math.sin(this.followAngleOffset) * perimeterDistance;
+    // Move toward destination
+    if (!context.destination) {
+      // No destination, go idle
+      this.send({ type: 'ARRIVED' });
+      return;
+    }
 
-    this.movement.moveTo(targetX, targetY);
+    const dest = context.destination;
+    const dist = Phaser.Math.Distance.Between(this.x, this.y, dest.x, dest.y);
+
+    if (dist <= ARRIVAL_DISTANCE) {
+      this.send({ type: 'ARRIVED' });
+      this.movement.stop();
+      return;
+    }
+
+    this.movement.moveTo(dest.x, dest.y);
     this.movement.update();
   }
 
   private updateFighting(context: MinionContext, delta: number): void {
     const target = context.combatTarget;
     if (!target || target.isDefeated()) {
-      // Target gone - this shouldn't happen as onTargetDefeated handles it
       this.send({ type: 'ENEMY_DEFEATED' });
       return;
     }
@@ -435,8 +439,8 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
     const effectiveAttack = this.getEffectiveAttack();
     const attackRange = effectiveAttack.range ?? 0;
     const combatDistance = target.getRadius() + MINION_RADIUS + attackRange;
-    const targetX = target.x + Math.cos(this.followAngleOffset) * combatDistance;
-    const targetY = target.y + Math.sin(this.followAngleOffset) * combatDistance;
+    const targetX = target.x + Math.cos(this.combatAngleOffset) * combatDistance;
+    const targetY = target.y + Math.sin(this.combatAngleOffset) * combatDistance;
     this.movement.moveTo(targetX, targetY);
 
     // Update attack behavior
