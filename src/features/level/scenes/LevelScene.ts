@@ -155,8 +155,7 @@ export class LevelScene extends Phaser.Scene {
           treasure.collect();
           this.treasures.splice(i, 1);
 
-          // Add currency and show effects
-          this.currencyDisplay.add(this.TREASURE_VALUE);
+          // Show collection effects - currency updates when orb arrives
           this.showCollectEffect(x, y);
           break;
         }
@@ -164,47 +163,170 @@ export class LevelScene extends Phaser.Scene {
     }
   }
 
-  /** Particle burst and floating text when collecting treasure */
-  private showCollectEffect(x: number, y: number): void {
-    // Particle burst
-    const particles: Phaser.GameObjects.Arc[] = [];
-    const particleCount = 8;
+  /** Animated essence orb that arcs from world position to UI */
+  private showCollectEffect(worldX: number, worldY: number): void {
+    // Initial burst at pickup location
+    this.showPickupBurst(worldX, worldY);
+
+    // Convert world position to screen position for the arc animation
+    const startScreenX = worldX - this.cameras.main.scrollX;
+    const startScreenY = worldY - this.cameras.main.scrollY;
+
+    // Target position (currency display)
+    const target = this.currencyDisplay.getTargetPosition();
+
+    // Create essence orb (gold)
+    const orb = this.add.circle(startScreenX, startScreenY, 8, 0xffd700);
+    orb.setStrokeStyle(3, 0xb8860b, 0.8);
+    orb.setScrollFactor(0);
+    orb.setDepth(1000);
+
+    // Animation duration
+    const duration = 400;
+
+    // Calculate arc control point (rises up before curving down)
+    const midX = (startScreenX + target.x) / 2;
+    const arcHeight = Math.min(150, Math.abs(target.y - startScreenY) + 80);
+    const controlY = Math.min(startScreenY, target.y) - arcHeight;
+
+    // Trail spawn timing
+    let lastTrailTime = 0;
+    const trailInterval = 40; // ms between trail particles
+
+    // Animate along quadratic bezier curve
+    this.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration,
+      ease: 'Power2.in',
+      onUpdate: (tween) => {
+        const t = tween.getValue() ?? 0;
+
+        // Quadratic bezier: B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
+        const oneMinusT = 1 - t;
+        const newX =
+          oneMinusT * oneMinusT * startScreenX +
+          2 * oneMinusT * t * midX +
+          t * t * target.x;
+        const newY =
+          oneMinusT * oneMinusT * startScreenY +
+          2 * oneMinusT * t * controlY +
+          t * t * target.y;
+
+        orb.setPosition(newX, newY);
+
+        // Pulse scale during flight
+        const pulse = 1 + Math.sin(t * Math.PI * 3) * 0.2;
+        orb.setScale(pulse);
+
+        // Spawn trail particles at intervals
+        const currentTime = t * duration;
+        if (currentTime - lastTrailTime >= trailInterval) {
+          lastTrailTime = currentTime;
+          this.spawnTrailParticle(newX, newY);
+        }
+      },
+      onComplete: () => {
+        orb.destroy();
+        this.onEssenceArrived();
+      },
+    });
+  }
+
+  /** Spawns a fading trail particle at the given screen position */
+  private spawnTrailParticle(x: number, y: number): void {
+    const trail = this.add.circle(x, y, 5, 0xffd700, 1);
+    trail.setScrollFactor(0);
+    trail.setDepth(999);
+
+    this.tweens.add({
+      targets: trail,
+      alpha: 0,
+      scale: 0.3,
+      duration: 500,
+      ease: 'Power1',
+      onComplete: () => trail.destroy(),
+    });
+  }
+
+  /** Small burst effect at pickup location */
+  private showPickupBurst(x: number, y: number): void {
+    const particleCount = 6;
+    for (let i = 0; i < particleCount; i++) {
+      const angle = (i / particleCount) * Math.PI * 2;
+      const particle = this.add.circle(x, y, 3, 0xffd700);
+
+      this.tweens.add({
+        targets: particle,
+        x: x + Math.cos(angle) * 25,
+        y: y + Math.sin(angle) * 25,
+        alpha: 0,
+        scale: 0,
+        duration: 200,
+        ease: 'Power2',
+        onComplete: () => particle.destroy(),
+      });
+    }
+  }
+
+  /** Called when essence orb arrives at the UI */
+  private onEssenceArrived(): void {
+    // Update currency
+    this.currencyDisplay.add(this.TREASURE_VALUE);
+
+    // Pop the display
+    this.currencyDisplay.pop();
+
+    // Particle burst at UI
+    this.showArrivalBurst();
+
+    // Floating +value text
+    this.showValueText();
+  }
+
+  /** Particle burst when essence arrives at UI */
+  private showArrivalBurst(): void {
+    const target = this.currencyDisplay.getTargetPosition();
+    const particleCount = 10;
 
     for (let i = 0; i < particleCount; i++) {
       const angle = (i / particleCount) * Math.PI * 2;
-      const particle = this.add.circle(x, y, 4, 0xffd700);
-      particles.push(particle);
+      const particle = this.add.circle(target.x, target.y, 4, 0xffd700);
+      particle.setScrollFactor(0);
+      particle.setDepth(999);
 
-      const distance = 40;
+      const distance = 30 + Math.random() * 20;
       this.tweens.add({
         targets: particle,
-        x: x + Math.cos(angle) * distance,
-        y: y + Math.sin(angle) * distance,
+        x: target.x + Math.cos(angle) * distance,
+        y: target.y + Math.sin(angle) * distance,
         alpha: 0,
-        scale: 0,
+        scale: 0.3,
         duration: 300,
         ease: 'Power2',
         onComplete: () => particle.destroy(),
       });
     }
+  }
 
-    // Floating text above currency display
-    const displayX = this.cameras.main.width - 60;
-    const displayY = this.cameras.main.height - 50;
+  /** Floating +value text near the UI */
+  private showValueText(): void {
+    const target = this.currencyDisplay.getTargetPosition();
 
-    const floatingText = this.add.text(displayX, displayY, `+${this.TREASURE_VALUE}`, {
-      fontSize: '14px',
-      color: '#a855f7',
+    const floatingText = this.add.text(target.x, target.y - 20, `+${this.TREASURE_VALUE}`, {
+      fontSize: '16px',
+      color: '#ffd700',
       fontStyle: 'bold',
     });
     floatingText.setScrollFactor(0);
     floatingText.setOrigin(0.5, 1);
+    floatingText.setDepth(1000);
 
     this.tweens.add({
       targets: floatingText,
-      y: displayY - 30,
+      y: target.y - 50,
       alpha: 0,
-      duration: 800,
+      duration: 700,
       ease: 'Power2',
       onComplete: () => floatingText.destroy(),
     });

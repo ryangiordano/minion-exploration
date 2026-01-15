@@ -15,7 +15,7 @@ export class Treasure extends Phaser.GameObjects.Container implements Followable
     // Add to scene
     scene.add.existing(this);
 
-    // Create visual (gold circle, larger than decorations)
+    // Create visual (gold essence, larger than decorations)
     const circle = scene.add.circle(0, 0, TREASURE_RADIUS, 0xffd700); // Gold color
     circle.setStrokeStyle(2, 0xb8860b); // Darker gold outline
     this.add(circle);

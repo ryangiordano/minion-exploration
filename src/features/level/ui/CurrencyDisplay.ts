@@ -17,7 +17,7 @@ export class CurrencyDisplay {
 
     this.text = scene.add.text(0, 0, 'Essence: 0', {
       fontSize: '16px',
-      color: '#a855f7',
+      color: '#ffd700',
       backgroundColor: '#000000',
       padding: { x: 8, y: 4 },
     });
@@ -72,6 +72,29 @@ export class CurrencyDisplay {
         this.container.x = this.baseX;
       },
     });
+  }
+
+  /** Pop scale effect when essence is collected */
+  public pop(): void {
+    this.scene.tweens.killTweensOf(this.container);
+    this.container.setScale(1);
+
+    this.scene.tweens.add({
+      targets: this.container,
+      scaleX: 1.15,
+      scaleY: 1.15,
+      duration: 80,
+      yoyo: true,
+      ease: 'Back.out',
+    });
+  }
+
+  /** Get the screen position where essence should fly to */
+  public getTargetPosition(): { x: number; y: number } {
+    return {
+      x: this.baseX - this.text.width / 2,
+      y: this.scene.cameras.main.height - 10 - this.text.height / 2,
+    };
   }
 
   public destroy(): void {
