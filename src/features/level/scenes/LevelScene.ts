@@ -290,7 +290,8 @@ export class LevelScene extends Phaser.Scene {
       treasure.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
         if (pointer.rightButtonDown() && this.selectionManager.hasSelection()) {
           this.getSelectedMinions().forEach(minion => {
-            minion.send({ type: 'MOVE_TO', x: treasure.x, y: treasure.y });
+            const offset = this.getScatterOffset();
+            minion.send({ type: 'MOVE_TO', x: treasure.x + offset.x, y: treasure.y + offset.y });
           });
           this.showClickEffect(treasure.x, treasure.y, CLICK_COLORS.collect);
           event.stopPropagation();
