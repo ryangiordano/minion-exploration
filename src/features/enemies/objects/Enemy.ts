@@ -164,6 +164,12 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
     return this.leveling.getLevel();
   }
 
+  /** Returns random essence drop amount based on enemy type config */
+  public getEssenceDropAmount(): number {
+    const [min, max] = this.typeConfig.essenceDrop;
+    return Phaser.Math.Between(min, max);
+  }
+
   public takeDamage(amount: number): void {
     if (this.defeated) return;
 

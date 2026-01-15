@@ -19,6 +19,7 @@ export const LACKEY_CONFIG: EnemyTypeConfig = {
     maxHp: 2,
     strength: 0.2,
   },
+  essenceDrop: [1, 2],
 };
 
 /** Brute: Large, slow, tanky - mini-boss feel */
@@ -40,4 +41,5 @@ export const BRUTE_CONFIG: EnemyTypeConfig = {
     maxHp: 6,
     strength: 0.5,
   },
+  essenceDrop: [3, 5],
 };

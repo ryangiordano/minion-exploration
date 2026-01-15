@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { Minion } from '../../minions';
-import { Treasure } from '../../treasure';
+import { Treasure, EssenceDropper } from '../../treasure';
 import { Enemy, TargetDummy, LACKEY_CONFIG, BRUTE_CONFIG, EnemyTypeConfig } from '../../enemies';
 import { CombatManager, CombatXpTracker, GameEventManager, EdgeScrollCamera, WhistleSelection, SelectionManager } from '../../../core/components';
 import { CurrencyDisplay } from '../ui/CurrencyDisplay';
@@ -33,6 +33,9 @@ export class LevelScene extends Phaser.Scene {
   private currencyDisplay!: CurrencyDisplay;
   private readonly MINION_COST = 10;
   private readonly TREASURE_VALUE = 5;
+
+  // Loot
+  private essenceDropper!: EssenceDropper;
 
   constructor() {
     super({ key: 'LevelScene' });
@@ -95,7 +98,7 @@ export class LevelScene extends Phaser.Scene {
 
     // Add instructions
     const instructions = this.add.text(10, 10,
-      'Hold Space: Select | Left-click: Deselect | Right-click: Move/Attack | E: Spawn minion | Mouse edges: Pan',
+      'Hold Space: Select | Left-click: Deselect | Right-click: Move/Attack | G: Grid lineup | E: Spawn | Edges: Pan',
       {
         fontSize: '12px',
         color: '#ffffff',
@@ -108,8 +111,14 @@ export class LevelScene extends Phaser.Scene {
     // Currency display
     this.currencyDisplay = new CurrencyDisplay(this);
 
+    // Essence dropper for enemy loot
+    this.essenceDropper = new EssenceDropper(this);
+
     // Setup spawn minion key
     this.setupSpawnControls();
+
+    // Setup grid lineup key
+    this.setupGridLineupControls();
   }
 
   update(_time: number, delta: number): void {
@@ -145,7 +154,7 @@ export class LevelScene extends Phaser.Scene {
 
     for (let i = this.treasures.length - 1; i >= 0; i--) {
       const treasure = this.treasures[i];
-      if (treasure.isCollected()) continue;
+      if (treasure.isCollected() || !treasure.isCollectible()) continue;
 
       for (const minion of minions) {
         const dist = Phaser.Math.Distance.Between(minion.x, minion.y, treasure.x, treasure.y);
@@ -342,6 +351,44 @@ export class LevelScene extends Phaser.Scene {
         this.spawnMinion(pointer.worldX, pointer.worldY);
       }
     });
+  }
+
+  private setupGridLineupControls(): void {
+    const gKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.G);
+
+    gKey?.on('down', () => {
+      this.commandGridLineup();
+    });
+  }
+
+  /** Arrange selected minions in a grid formation centered on the mouse position */
+  private commandGridLineup(): void {
+    const selectedMinions = this.getSelectedMinions();
+    if (selectedMinions.length === 0) return;
+
+    const pointer = this.input.activePointer;
+    const centerX = pointer.worldX;
+    const centerY = pointer.worldY;
+
+    const spacing = 45;
+    const gridSize = Math.ceil(Math.sqrt(selectedMinions.length));
+
+    // Calculate grid offset so formation is centered
+    const gridWidth = (gridSize - 1) * spacing;
+    const gridHeight = (gridSize - 1) * spacing;
+    const startX = centerX - gridWidth / 2;
+    const startY = centerY - gridHeight / 2;
+
+    selectedMinions.forEach((minion, index) => {
+      const col = index % gridSize;
+      const row = Math.floor(index / gridSize);
+      const x = startX + col * spacing;
+      const y = startY + row * spacing;
+
+      minion.send({ type: 'MOVE_TO', x, y });
+    });
+
+    this.showClickEffect(centerX, centerY, CLICK_COLORS.move);
   }
 
   private setupWhistleSelection(): void {
@@ -552,6 +599,12 @@ export class LevelScene extends Phaser.Scene {
       if (index > -1) {
         this.enemies.splice(index, 1);
       }
+
+      // Drop essence loot
+      const dropAmount = deadEnemy.getEssenceDropAmount();
+      this.essenceDropper.drop(deadEnemy.x, deadEnemy.y, dropAmount, (treasure) => {
+        this.treasures.push(treasure);
+      });
     });
 
     // Right-click on enemy = attack command for selected minions

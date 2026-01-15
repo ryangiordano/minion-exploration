@@ -5,6 +5,7 @@ const TREASURE_RADIUS = 14;
 
 export class Treasure extends Phaser.GameObjects.Container implements Followable {
   private collected = false;
+  private collectible = true;
   private value: number;
 
   constructor(scene: Phaser.Scene, x: number, y: number, value = 1) {
@@ -31,6 +32,14 @@ export class Treasure extends Phaser.GameObjects.Container implements Followable
 
   public isCollected(): boolean {
     return this.collected;
+  }
+
+  public isCollectible(): boolean {
+    return this.collectible;
+  }
+
+  public setCollectible(value: boolean): void {
+    this.collectible = value;
   }
 
   public getValue(): number {

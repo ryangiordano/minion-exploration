@@ -17,6 +17,8 @@ export interface EnemyTypeConfig {
     maxHp: number;
     strength: number;
   };
+  /** Range of essence dropped on death [min, max] */
+  essenceDrop: [number, number];
 }
 
 export interface EnemyConfig {
