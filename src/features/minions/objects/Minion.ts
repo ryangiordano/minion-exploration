@@ -8,7 +8,7 @@ import { Combatable, Attacker, AttackConfig, Selectable } from '../../../core/ty
 import { AbilitySystem, GemOwner, AbilityGem } from '../../../core/abilities';
 import { minionMachine, MinionContext, MinionEvent, MinionState } from '../machines/minionMachine';
 
-const MINION_RADIUS = 10;
+const MINION_RADIUS = 14;
 const DEFAULT_AGGRO_RADIUS = 100;
 const ARRIVAL_DISTANCE = 15;
 
@@ -119,8 +119,8 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
     // Create visual
     const graphics = scene.add.graphics();
     graphics.fillStyle(0x50c878, 1);
-    graphics.fillCircle(10, 10, 10);
-    graphics.generateTexture('minion', 20, 20);
+    graphics.fillCircle(MINION_RADIUS, MINION_RADIUS, MINION_RADIUS);
+    graphics.generateTexture('minion', MINION_RADIUS * 2, MINION_RADIUS * 2);
     graphics.destroy();
     this.setTexture('minion');
 

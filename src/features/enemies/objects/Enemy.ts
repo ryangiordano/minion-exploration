@@ -1,37 +1,14 @@
 import Phaser from 'phaser';
 import { Combatable, AttackConfig, AggroCapable } from '../../../core/types/interfaces';
 import { StatBar, HP_BAR_DEFAULTS, AttackBehavior, ThreatTracker, TargetedMovement, LevelingSystem, defaultXpCurve } from '../../../core/components';
+import { EnemyTypeConfig, EnemyConfig } from '../types';
+import { LACKEY_CONFIG } from '../configs';
 
-const ENEMY_RADIUS = 16;
 const DEFAULT_AGGRO_RADIUS = 150;
 const DEFAULT_ATTACK_RANGE = 5; // Must be within this distance (beyond touching) to attack
-const DEFAULT_SPEED = 80;
-const DEFAULT_ATTACK_COOLDOWN = 2000;  // Slow attacks - enemies are fodder, not threats
-
-// Default enemy base stats at level 1
-const DEFAULT_BASE_STATS = {
-  maxHp: 3,        // Weaker - meant to be cut through in groups
-  maxMp: 0,        // Enemies don't use MP (yet)
-  strength: 1,     // Low damage, slow attacks - quantity over quality
-  dexterity: 1,
-  magic: 1,
-  resilience: 1,
-};
-
-// Stat growth per level for enemies
-const DEFAULT_STAT_GROWTH = {
-  maxHp: 1.5,      // Slower HP scaling
-  strength: 0.3,   // Slower strength scaling
-};
-
-export interface EnemyConfig {
-  level?: number;           // Starting level (default: 1)
-  aggroRadius?: number;
-  attackRange?: number;
-  speed?: number;
-}
 
 export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, AggroCapable {
+  private typeConfig: EnemyTypeConfig;
   private leveling: LevelingSystem;
   private hp: number;
   private defeated = false;
@@ -49,10 +26,12 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
   constructor(scene: Phaser.Scene, x: number, y: number, config: EnemyConfig = {}) {
     super(scene, x, y, '');
 
+    this.typeConfig = config.type ?? LACKEY_CONFIG;
+
     // Initialize leveling system
     this.leveling = new LevelingSystem({
-      baseStats: DEFAULT_BASE_STATS,
-      growthPerLevel: DEFAULT_STAT_GROWTH,
+      baseStats: this.typeConfig.baseStats,
+      growthPerLevel: this.typeConfig.statGrowth,
       xpCurve: defaultXpCurve,
     });
 
@@ -70,23 +49,27 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
-    // Create visual (red circle texture)
-    const graphics = scene.add.graphics();
-    graphics.fillStyle(0xff4444, 1);
-    graphics.fillCircle(ENEMY_RADIUS, ENEMY_RADIUS, ENEMY_RADIUS);
-    graphics.lineStyle(2, 0xaa0000);
-    graphics.strokeCircle(ENEMY_RADIUS, ENEMY_RADIUS, ENEMY_RADIUS);
-    graphics.generateTexture('enemy', ENEMY_RADIUS * 2, ENEMY_RADIUS * 2);
-    graphics.destroy();
+    // Create visual (circle texture based on type)
+    const radius = this.typeConfig.radius;
+    const textureKey = `enemy_${radius}`;
+    if (!scene.textures.exists(textureKey)) {
+      const graphics = scene.add.graphics();
+      graphics.fillStyle(this.typeConfig.color, 1);
+      graphics.fillCircle(radius, radius, radius);
+      graphics.lineStyle(2, this.typeConfig.strokeColor);
+      graphics.strokeCircle(radius, radius, radius);
+      graphics.generateTexture(textureKey, radius * 2, radius * 2);
+      graphics.destroy();
+    }
 
-    this.setTexture('enemy');
+    this.setTexture(textureKey);
 
     // Setup physics
     this.setCollideWorldBounds(true);
 
     // Setup movement component
     this.movement = new TargetedMovement(this, {
-      speed: config.speed ?? DEFAULT_SPEED,
+      speed: this.typeConfig.speed,
       arrivalDistance: 5,
       slowdownDistance: 40,
       minSpeedScale: 0.3
@@ -95,8 +78,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
     // Create HP bar component (auto-hides when full)
     this.hpBar = new StatBar(scene, {
       ...HP_BAR_DEFAULTS,
-      width: ENEMY_RADIUS * 2,
-      offsetY: -ENEMY_RADIUS - 8
+      width: radius * 2,
+      offsetY: -radius - 8
     });
     this.updateHpBar();
 
@@ -156,13 +139,13 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
     const stats = this.leveling.getStats();
     return {
       damage: Math.floor(stats.strength),
-      cooldownMs: DEFAULT_ATTACK_COOLDOWN,
+      cooldownMs: this.typeConfig.attackCooldown,
       effectType: 'melee'
     };
   }
 
   public getRadius(): number {
-    return ENEMY_RADIUS;
+    return this.typeConfig.radius;
   }
 
   public getAggroRadius(): number {
@@ -273,8 +256,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
     // If we have a target, move toward it and attack when in range
     const target = this.attackBehavior.getTarget();
     if (target && !target.isDefeated()) {
+      const radius = this.typeConfig.radius;
       const distance = Phaser.Math.Distance.Between(this.x, this.y, target.x, target.y);
-      const touchDistance = ENEMY_RADIUS + target.getRadius();
+      const touchDistance = radius + target.getRadius();
 
       if (distance <= touchDistance + this.attackRange) {
         // In attack range - stop moving and attack
@@ -282,7 +266,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
         this.attackBehavior.update(delta);
       } else {
         // Move toward target's perimeter
-        const perimeterDistance = target.getRadius() + ENEMY_RADIUS;
+        const perimeterDistance = target.getRadius() + radius;
         const targetX = target.x + Math.cos(this.followAngleOffset) * perimeterDistance;
         const targetY = target.y + Math.sin(this.followAngleOffset) * perimeterDistance;
         this.movement.moveTo(targetX, targetY);

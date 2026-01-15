@@ -1,9 +1,8 @@
 import Phaser from 'phaser';
 import { Minion } from '../../minions';
 import { Treasure } from '../../treasure';
-import { Enemy, TargetDummy } from '../../enemies';
+import { Enemy, TargetDummy, LACKEY_CONFIG, BRUTE_CONFIG, EnemyTypeConfig } from '../../enemies';
 import { CombatManager, CombatXpTracker, GameEventManager, EdgeScrollCamera, WhistleSelection, SelectionManager } from '../../../core/components';
-import { KnockbackGem, HealPulseGem, VitalityGem, RangedAttackGem } from '../../../core/abilities';
 import { Combatable } from '../../../core/types/interfaces';
 
 // Visual feedback colors
@@ -70,7 +69,7 @@ export class LevelScene extends Phaser.Scene {
     // Spawn a target dummy near center for ability testing
     this.spawnTargetDummy(worldWidth / 2 + 200, worldHeight / 2);
 
-    // Spawn minions near center with different gems
+    // Spawn minions near center
     const minionPositions = [
       { x: worldWidth / 2 + 100, y: worldHeight / 2 + 50 },
       { x: worldWidth / 2 - 100, y: worldHeight / 2 + 50 },
@@ -78,18 +77,8 @@ export class LevelScene extends Phaser.Scene {
       { x: worldWidth / 2, y: worldHeight / 2 - 100 }
     ];
 
-    const testGems = [
-      new KnockbackGem(),
-      new HealPulseGem(),
-      new VitalityGem(),
-      new RangedAttackGem(),
-    ];
-
-    minionPositions.forEach((pos, index) => {
-      const minion = this.spawnMinion(pos.x, pos.y);
-      if (testGems[index]) {
-        minion.equipGem(testGems[index]);
-      }
+    minionPositions.forEach((pos) => {
+      this.spawnMinion(pos.x, pos.y);
     });
 
     // Setup whistle selection (hold Space to grow selection circle)
@@ -305,30 +294,37 @@ export class LevelScene extends Phaser.Scene {
     const centerY = worldHeight / 2;
     const safeRadius = 400;
 
-    // Cluster 1: 4 level 1 enemies
-    this.spawnEnemyCluster(centerX, centerY, safeRadius, worldWidth, worldHeight, 4, 1);
-
-    // Cluster 2: 3 level 1 enemies
-    this.spawnEnemyCluster(centerX, centerY, safeRadius, worldWidth, worldHeight, 3, 1);
-
-    // Cluster 3: 3 level 2 enemies
-    this.spawnEnemyCluster(centerX, centerY, safeRadius + 100, worldWidth, worldHeight, 3, 2);
+    // Mixed packs: brutes with lackey escorts
+    this.spawnMixedPack(centerX, centerY, safeRadius, worldWidth, worldHeight, 1, 3);
+    this.spawnMixedPack(centerX, centerY, safeRadius, worldWidth, worldHeight, 1, 4);
+    this.spawnMixedPack(centerX, centerY, safeRadius + 100, worldWidth, worldHeight, 2, 5);
   }
 
-  private spawnEnemyCluster(
+  /** Spawn a mixed pack with brutes in the center and lackeys around them */
+  private spawnMixedPack(
     avoidX: number, avoidY: number, minDistance: number,
     worldWidth: number, worldHeight: number,
-    count: number, level: number
+    bruteCount: number, lackeyCount: number
   ): void {
     const center = this.getSpawnPositionAwayFrom(avoidX, avoidY, minDistance, worldWidth, worldHeight);
-    const clusterRadius = 50;
 
-    for (let i = 0; i < count; i++) {
-      const angle = (i / count) * Math.PI * 2;
-      const distance = Phaser.Math.Between(10, clusterRadius);
+    // Spawn brutes near center
+    for (let i = 0; i < bruteCount; i++) {
+      const angle = (i / bruteCount) * Math.PI * 2;
+      const distance = Phaser.Math.Between(0, 30);
       const x = center.x + Math.cos(angle) * distance;
       const y = center.y + Math.sin(angle) * distance;
-      this.spawnEnemy(x, y, level);
+      this.spawnEnemy(x, y, 1, BRUTE_CONFIG);
+    }
+
+    // Spawn lackeys around the brutes
+    const lackeyRadius = 60 + BRUTE_CONFIG.radius;
+    for (let i = 0; i < lackeyCount; i++) {
+      const angle = (i / lackeyCount) * Math.PI * 2;
+      const distance = Phaser.Math.Between(40, lackeyRadius);
+      const x = center.x + Math.cos(angle) * distance;
+      const y = center.y + Math.sin(angle) * distance;
+      this.spawnEnemy(x, y, 1, LACKEY_CONFIG);
     }
   }
 
@@ -349,8 +345,8 @@ export class LevelScene extends Phaser.Scene {
     return { x, y };
   }
 
-  private spawnEnemy(x: number, y: number, level: number): Enemy {
-    const enemy = new Enemy(this, x, y, { level });
+  private spawnEnemy(x: number, y: number, level: number, type: EnemyTypeConfig): Enemy {
+    const enemy = new Enemy(this, x, y, { level, type });
     this.enemies.push(enemy);
 
     enemy.onDeath((deadEnemy) => {
