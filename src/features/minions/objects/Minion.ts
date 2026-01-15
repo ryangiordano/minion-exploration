@@ -387,16 +387,28 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
 
     switch (state) {
       case 'idle':
-        // Just stand there
+        this.updateIdle();
         break;
 
       case 'moving':
         this.updateMoving(context);
         break;
 
+      case 'retreating':
+        this.updateRetreating(context);
+        break;
+
       case 'fighting':
         this.updateFighting(context, delta);
         break;
+    }
+  }
+
+  private updateIdle(): void {
+    // Check for nearby enemies to auto-attack
+    const nearestEnemy = this.findNearestEnemy();
+    if (nearestEnemy) {
+      this.send({ type: 'ENEMY_NEARBY', enemy: nearestEnemy });
     }
   }
 
@@ -408,9 +420,16 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
       return;
     }
 
-    // Move toward destination
+    this.moveToDestination(context);
+  }
+
+  /** Move to destination without checking for enemies (used when retreating) */
+  private updateRetreating(context: MinionContext): void {
+    this.moveToDestination(context);
+  }
+
+  private moveToDestination(context: MinionContext): void {
     if (!context.destination) {
-      // No destination, go idle
       this.send({ type: 'ARRIVED' });
       return;
     }

@@ -30,6 +30,7 @@ export type MinionEvent =
  * - idle: Standing still, waiting for commands
  * - moving: Moving to a destination, will auto-attack nearby enemies
  * - fighting: Actively in combat with a specific enemy
+ * - retreating: Moving to destination, ignores nearby enemies (used to disengage from combat)
  */
 export const minionMachine = setup({
   types: {
@@ -92,6 +93,10 @@ export const minionMachine = setup({
           target: 'fighting',
           actions: 'setCombatTarget',
         },
+        ENEMY_NEARBY: {
+          target: 'fighting',
+          actions: 'setCombatTarget',
+        },
       },
     },
     moving: {
@@ -117,8 +122,8 @@ export const minionMachine = setup({
     fighting: {
       on: {
         MOVE_TO: {
-          // Move command cancels combat
-          target: 'moving',
+          // Move command cancels combat - retreat ignores auto-aggro
+          target: 'retreating',
           actions: ['clearCombatTarget', 'setDestination'],
         },
         ATTACK: {
@@ -132,7 +137,25 @@ export const minionMachine = setup({
         },
       },
     },
+    retreating: {
+      on: {
+        MOVE_TO: {
+          // New move command while retreating
+          actions: 'setDestination',
+        },
+        ATTACK: {
+          // Explicit attack command overrides retreat
+          target: 'fighting',
+          actions: 'setCombatTarget',
+        },
+        // ENEMY_NEARBY is intentionally not handled - we ignore auto-aggro while retreating
+        ARRIVED: {
+          target: 'idle',
+          actions: 'clearDestination',
+        },
+      },
+    },
   },
 });
 
-export type MinionState = 'idle' | 'moving' | 'fighting';
+export type MinionState = 'idle' | 'moving' | 'fighting' | 'retreating';
