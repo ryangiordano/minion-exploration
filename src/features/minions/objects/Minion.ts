@@ -9,6 +9,9 @@ import { AbilitySystem, GemOwner, AbilityGem } from '../../../core/abilities';
 import { minionMachine, MinionContext, MinionEvent, MinionState } from '../machines/minionMachine';
 
 const MINION_RADIUS = 14;
+export const MINION_VISUAL_RADIUS = 28;  // Scaled 2x for display
+const STAT_BAR_WIDTH = 70;
+const STAT_BAR_OFFSET_Y = -42;
 const DEFAULT_AGGRO_RADIUS = 100;
 const ARRIVAL_DISTANCE = 15;
 const PRECISE_ARRIVAL_DISTANCE = 2;
@@ -44,14 +47,18 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
 
   // Visual components
   private selectionCircle?: Phaser.GameObjects.Graphics;
-  private statBars: UnitStatBars;
-  private levelUpEffect: LevelUpEffect;
-  private floatingText: FloatingText;
+  private statBars!: UnitStatBars;
+  private levelUpEffect!: LevelUpEffect;
+  private floatingText!: FloatingText;
 
   // Movement and combat components
   private movement!: TargetedMovement;
   private attackBehavior!: AttackBehavior;
   private combatAngleOffset = 0;
+
+  // Animation
+  private hopTween?: Phaser.Tweens.Tween;
+  private isHopping = false;
 
   // Stats and leveling
   private leveling: LevelingSystem;
@@ -75,21 +82,18 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
   constructor(scene: Phaser.Scene, x: number, y: number, config: MinionConfig = {}) {
     super(scene, x, y, '');
 
-    // Create and start the state machine actor
+    // Initialize core systems
     this.actor = createActor(minionMachine);
     this.actor.start();
 
-    // Initialize leveling system
     this.leveling = new LevelingSystem({
       baseStats: DEFAULT_BASE_STATS,
       growthPerLevel: DEFAULT_STAT_GROWTH,
       xpCurve: defaultXpCurve,
     });
 
-    // Initialize ability system (before HP/MP init so modifiers apply)
     this.abilitySystem = new AbilitySystem(this, { maxSlots: 1 });
 
-    // Initialize HP and MP from effective stats
     const stats = this.getEffectiveStats();
     this.hp = stats.maxHp;
     this.mp = stats.maxMp;
@@ -99,36 +103,58 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
     this.xpTracker = config.xpTracker;
     this.aggroRadius = config.aggroRadius ?? DEFAULT_AGGRO_RADIUS;
 
-    // Create level up effects
-    this.levelUpEffect = new LevelUpEffect(scene);
-    this.floatingText = new FloatingText(scene);
-
-    // Handle level ups
-    this.leveling.onLevelUp(() => {
-      const oldStats = this.getEffectiveStats();
-      const newStats = this.getEffectiveStats();
-      this.hp = Math.min(this.hp + (newStats.maxHp - oldStats.maxHp), newStats.maxHp);
-      this.mp = Math.min(this.mp + (newStats.maxMp - oldStats.maxMp), newStats.maxMp);
-      this.levelUpEffect.play(this.x, this.y);
-      this.floatingText.showLevelUp(this.x, this.y);
-    });
-
     // Add to scene
     scene.add.existing(this);
     scene.physics.add.existing(this);
-
-    // Create visual
-    const graphics = scene.add.graphics();
-    graphics.fillStyle(0x50c878, 1);
-    graphics.fillCircle(MINION_RADIUS, MINION_RADIUS, MINION_RADIUS);
-    graphics.generateTexture('minion', MINION_RADIUS * 2, MINION_RADIUS * 2);
-    graphics.destroy();
-    this.setTexture('minion');
-
-    // Setup physics
     this.setCollideWorldBounds(true);
 
-    // Setup movement component
+    // Setup components
+    this.setupVisuals(scene);
+    this.setupAnimations(scene);
+    this.setupMovementAndCombat(scene);
+    this.setupUI(scene);
+  }
+
+  // ============ Constructor Helpers ============
+
+  private setupVisuals(scene: Phaser.Scene): void {
+    this.setTexture('minion');
+    this.setTint(0x87ceeb);
+    scene.textures.get('minion').setFilter(Phaser.Textures.FilterMode.NEAREST);
+    this.setScale(2);
+  }
+
+  private setupAnimations(scene: Phaser.Scene): void {
+    // Idle blink animation
+    if (!scene.anims.exists('minion-idle')) {
+      scene.anims.create({
+        key: 'minion-idle',
+        frames: [
+          { key: 'minion', frame: 0, duration: 2000 },
+          { key: 'minion', frame: 1, duration: 150 },
+          { key: 'minion', frame: 2, duration: 150 },
+          { key: 'minion', frame: 1, duration: 150 },
+        ],
+        repeat: -1,
+      });
+    }
+    this.play('minion-idle');
+
+    // Gooey undulating scale
+    const baseScale = 2;
+    const scaleVariation = 0.15;
+    scene.tweens.add({
+      targets: this,
+      scaleX: baseScale + scaleVariation,
+      scaleY: baseScale - scaleVariation,
+      duration: 800 + Math.random() * 400,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+  }
+
+  private setupMovementAndCombat(scene: Phaser.Scene): void {
     this.movement = new TargetedMovement(this, {
       speed: 120,
       arrivalDistance: 10,
@@ -136,7 +162,6 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
       minSpeedScale: 0.3
     });
 
-    // Setup attack behavior
     this.attackBehavior = new AttackBehavior({
       defaultAttack: this.getPrimaryAttack()
     });
@@ -154,24 +179,67 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
     });
 
     this.attackBehavior.onTargetDefeated(() => {
-      // Send ENEMY_DEFEATED event to state machine
       this.actor.send({ type: 'ENEMY_DEFEATED' });
       this.attackBehavior.disengage();
       this.combatManager?.endCombat(this);
     });
+  }
 
-    // Create selection indicator
+  private setupUI(scene: Phaser.Scene): void {
+    // Level up effects
+    this.levelUpEffect = new LevelUpEffect(scene);
+    this.floatingText = new FloatingText(scene);
+
+    this.leveling.onLevelUp(() => {
+      const oldStats = this.getEffectiveStats();
+      const newStats = this.getEffectiveStats();
+      this.hp = Math.min(this.hp + (newStats.maxHp - oldStats.maxHp), newStats.maxHp);
+      this.mp = Math.min(this.mp + (newStats.maxMp - oldStats.maxMp), newStats.maxMp);
+      this.levelUpEffect.play(this.x, this.y);
+      this.floatingText.showLevelUp(this.x, this.y);
+    });
+
+    // Selection indicator
     this.selectionCircle = scene.add.graphics();
     this.selectionCircle.lineStyle(2, 0xffff00, 1);
-    this.selectionCircle.strokeCircle(0, 0, 14);
+    this.selectionCircle.strokeCircle(0, 0, MINION_VISUAL_RADIUS);
     this.selectionCircle.setVisible(false);
 
-    // Create stat bars
+    // Stat bars
     this.statBars = new UnitStatBars(scene, {
-      width: MINION_RADIUS * 2.5,
-      offsetY: -MINION_RADIUS - 14,
+      width: STAT_BAR_WIDTH,
+      offsetY: STAT_BAR_OFFSET_Y,
       barHeight: 4,
     });
+  }
+
+  // ============ Hop Animation ============
+
+  private startHopping(): void {
+    if (this.isHopping) return;
+    this.isHopping = true;
+
+    // Squash and stretch animation to simulate hopping
+    this.hopTween = this.scene.tweens.add({
+      targets: this,
+      scaleY: { from: 2, to: 2.3 },
+      scaleX: { from: 2, to: 1.7 },
+      duration: 120,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Quad.easeOut',
+    });
+  }
+
+  private stopHopping(): void {
+    if (!this.isHopping) return;
+    this.isHopping = false;
+
+    this.hopTween?.stop();
+    this.hopTween = undefined;
+
+    // Reset to base scale
+    this.setScale(2);
   }
 
   // ============ State Machine Interface ============
@@ -406,6 +474,8 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
   }
 
   private updateIdle(): void {
+    this.stopHopping();
+
     // Check for nearby enemies to auto-attack
     const nearestEnemy = this.findNearestEnemy();
     if (nearestEnemy) {
@@ -432,6 +502,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
   private moveToDestination(context: MinionContext): void {
     if (!context.destination) {
       this.send({ type: 'ARRIVED' });
+      this.stopHopping();
       return;
     }
 
@@ -442,9 +513,11 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
     if (dist <= arrivalDist) {
       this.send({ type: 'ARRIVED' });
       this.movement.stop();
+      this.stopHopping();
       return;
     }
 
+    this.startHopping();
     this.movement.moveTo(dest.x, dest.y);
     this.movement.update();
   }
@@ -453,6 +526,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
     const target = context.combatTarget;
     if (!target || target.isDefeated()) {
       this.send({ type: 'ENEMY_DEFEATED' });
+      this.stopHopping();
       return;
     }
 
@@ -462,6 +536,15 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
     const combatDistance = target.getRadius() + MINION_RADIUS + attackRange;
     const targetX = target.x + Math.cos(this.combatAngleOffset) * combatDistance;
     const targetY = target.y + Math.sin(this.combatAngleOffset) * combatDistance;
+
+    // Check if we're close enough to attack (stop hopping) or need to move (keep hopping)
+    const distToTarget = Phaser.Math.Distance.Between(this.x, this.y, targetX, targetY);
+    if (distToTarget > 5) {
+      this.startHopping();
+    } else {
+      this.stopHopping();
+    }
+
     this.movement.moveTo(targetX, targetY);
 
     // Update attack behavior
@@ -553,6 +636,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
 
   destroy(fromScene?: boolean): void {
     this.actor.stop();
+    this.hopTween?.stop();
     this.selectionCircle?.destroy();
     this.statBars.destroy();
     this.levelUpEffect.destroy();

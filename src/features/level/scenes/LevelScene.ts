@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { Minion } from '../../minions';
+import { Minion, MINION_VISUAL_RADIUS } from '../../minions';
 import { Treasure, EssenceDropper } from '../../treasure';
 import { Enemy, TargetDummy, LACKEY_CONFIG, BRUTE_CONFIG, EnemyTypeConfig } from '../../enemies';
 import { CombatManager, CombatXpTracker, GameEventManager, EdgeScrollCamera, WhistleSelection, SelectionManager } from '../../../core/components';
@@ -39,6 +39,14 @@ export class LevelScene extends Phaser.Scene {
 
   constructor() {
     super({ key: 'LevelScene' });
+  }
+
+  preload(): void {
+    // Load minion spritesheet (3x2 grid, 32x32 frames, 5 used)
+    this.load.spritesheet('minion', '/assets/minions/minion.png', {
+      frameWidth: 32,
+      frameHeight: 32,
+    });
   }
 
   create(): void {
@@ -370,7 +378,8 @@ export class LevelScene extends Phaser.Scene {
     const centerX = pointer.worldX;
     const centerY = pointer.worldY;
 
-    const spacing = 45;
+    // Space minions so they don't overlap (diameter + small gap)
+    const spacing = MINION_VISUAL_RADIUS * 2 + 10;
     const gridSize = Math.ceil(Math.sqrt(selectedMinions.length));
 
     // Calculate grid offset so formation is centered
@@ -425,7 +434,7 @@ export class LevelScene extends Phaser.Scene {
   }
 
   /** Get a random offset for scattering minions around a target point */
-  private getScatterOffset(radius: number = 30): { x: number; y: number } {
+  private getScatterOffset(radius: number = MINION_VISUAL_RADIUS * 2): { x: number; y: number } {
     const angle = Math.random() * Math.PI * 2;
     const distance = Math.random() * radius;
     return {

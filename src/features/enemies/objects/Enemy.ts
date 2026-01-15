@@ -63,6 +63,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
     }
 
     this.setTexture(textureKey);
+    this.setScale(2);
+
+    // Calculate visual dimensions for 2x scale
+    const visualRadius = radius * 2;
 
     // Setup physics
     this.setCollideWorldBounds(true);
@@ -78,8 +82,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
     // Create HP bar component (auto-hides when full)
     this.hpBar = new StatBar(scene, {
       ...HP_BAR_DEFAULTS,
-      width: radius * 2,
-      offsetY: -radius - 8
+      width: visualRadius * 2,
+      offsetY: -visualRadius - 8
     });
     this.updateHpBar();
 

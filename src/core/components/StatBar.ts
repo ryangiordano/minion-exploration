@@ -8,6 +8,7 @@ export interface StatBarConfig {
   color?: number;             // Bar fill color (required if colorFn not provided)
   backgroundColor?: number;   // Background color (default: dark version of color)
   hideWhenFull?: boolean;     // Hide the bar when at max (default: false)
+  hideWhenEmpty?: boolean;    // Hide the bar when at zero (default: false)
   colorFn?: (percent: number) => number;  // Dynamic color based on fill percent (0-1)
   animated?: boolean;         // Enable smooth animations (default: true)
   animationSpeed?: number;    // How fast bar fills/drains (default: 8, higher = faster)
@@ -40,6 +41,7 @@ export const MP_BAR_DEFAULTS: StatBarConfig = {
 export const XP_BAR_DEFAULTS: StatBarConfig = {
   color: 0xffcc00,
   hideWhenFull: false,
+  hideWhenEmpty: true,
 };
 
 /**
@@ -54,6 +56,7 @@ export class StatBar {
   private readonly color: number;
   private readonly backgroundColor: number;
   private readonly hideWhenFull: boolean;
+  private readonly hideWhenEmpty: boolean;
   private readonly colorFn?: (percent: number) => number;
 
   // Animation state
@@ -75,6 +78,7 @@ export class StatBar {
     this.color = config.color ?? 0xffffff;
     this.backgroundColor = config.backgroundColor ?? this.darkenColor(this.color);
     this.hideWhenFull = config.hideWhenFull ?? false;
+    this.hideWhenEmpty = config.hideWhenEmpty ?? false;
     this.colorFn = config.colorFn;
 
     // Animation config
@@ -103,6 +107,12 @@ export class StatBar {
 
     // Auto-hide when full if configured
     if (this.hideWhenFull && this.targetPercent >= 1 && this.displayPercent >= 0.99) {
+      this.graphics.setVisible(false);
+      return;
+    }
+
+    // Auto-hide when empty if configured
+    if (this.hideWhenEmpty && this.targetPercent <= 0 && this.displayPercent <= 0.01) {
       this.graphics.setVisible(false);
       return;
     }
