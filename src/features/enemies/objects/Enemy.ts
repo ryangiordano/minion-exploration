@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { Combatable, AttackConfig, AggroCapable } from '../../../core/types/interfaces';
-import { StatBar, HP_BAR_DEFAULTS, AttackBehavior, ThreatTracker, TargetedMovement, LevelingSystem, defaultXpCurve } from '../../../core/components';
+import { StatBar, HP_BAR_DEFAULTS, AttackBehavior, ThreatTracker, TargetedMovement, LevelingSystem, defaultXpCurve, FloatingText } from '../../../core/components';
 import { EnemyTypeConfig, EnemyConfig } from '../types';
 import { LACKEY_CONFIG } from '../configs';
 
@@ -22,6 +22,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
 
   // Death callback
   private onDeathCallback?: (enemy: Enemy) => void;
+
+  // Visual feedback
+  private floatingText!: FloatingText;
 
   constructor(scene: Phaser.Scene, x: number, y: number, config: EnemyConfig = {}) {
     super(scene, x, y, '');
@@ -89,6 +92,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
 
     // Make interactive for click detection
     this.setInteractive({ useHandCursor: true });
+
+    // Floating damage text
+    this.floatingText = new FloatingText(scene);
 
     // Setup attack behavior for fighting back (damage from stats)
     this.attackBehavior = new AttackBehavior({
@@ -179,6 +185,17 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
 
     this.hp = Math.max(0, this.hp - amount);
     this.updateHpBar();
+
+    // Show white floating damage text
+    this.floatingText.show({
+      text: `-${amount}`,
+      x: this.x,
+      y: this.y - this.typeConfig.radius,
+      color: '#ffffff',
+      fontSize: 14,
+      duration: 800,
+      floatSpeed: 40,
+    });
 
     // Visual feedback: flash
     this.scene.tweens.add({

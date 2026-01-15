@@ -33,7 +33,7 @@ const DEFAULT_STAT_GROWTH = {
   strength: 0.5,
 };
 
-const DEFAULT_ATTACK_COOLDOWN = 500;
+const DEFAULT_ATTACK_COOLDOWN = 1000;
 
 export interface MinionConfig {
   combatManager?: CombatManager;
@@ -336,6 +336,9 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
 
     this.hp = Math.max(0, this.hp - amount);
     this.updateStatBars();
+
+    // Show red floating damage text
+    this.floatingText.showDamage(this.x, this.y - MINION_VISUAL_RADIUS, amount);
 
     this.scene.tweens.add({
       targets: this,

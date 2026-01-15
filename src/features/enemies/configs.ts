@@ -6,7 +6,7 @@ export const LACKEY_CONFIG: EnemyTypeConfig = {
   color: 0xff6666,
   strokeColor: 0xcc3333,
   speed: 100,
-  attackCooldown: 1500,
+  attackCooldown: 2000,
   baseStats: {
     maxHp: 6,
     maxMp: 0,
@@ -28,7 +28,7 @@ export const BRUTE_CONFIG: EnemyTypeConfig = {
   color: 0xaa2222,
   strokeColor: 0x660000,
   speed: 50,
-  attackCooldown: 2500,
+  attackCooldown: 3000,
   baseStats: {
     maxHp: 20,
     maxMp: 0,
