@@ -3,6 +3,7 @@ import { Minion } from '../../minions';
 import { Treasure } from '../../treasure';
 import { Enemy, TargetDummy, LACKEY_CONFIG, BRUTE_CONFIG, EnemyTypeConfig } from '../../enemies';
 import { CombatManager, CombatXpTracker, GameEventManager, EdgeScrollCamera, WhistleSelection, SelectionManager } from '../../../core/components';
+import { CurrencyDisplay } from '../ui/CurrencyDisplay';
 import { Combatable } from '../../../core/types/interfaces';
 
 // Visual feedback colors
@@ -27,6 +28,11 @@ export class LevelScene extends Phaser.Scene {
   // Selection
   private selectionManager = new SelectionManager();
   private whistleSelection?: WhistleSelection;
+
+  // Currency
+  private currencyDisplay!: CurrencyDisplay;
+  private readonly MINION_COST = 10;
+  private readonly TREASURE_VALUE = 5;
 
   constructor() {
     super({ key: 'LevelScene' });
@@ -89,7 +95,7 @@ export class LevelScene extends Phaser.Scene {
 
     // Add instructions
     const instructions = this.add.text(10, 10,
-      'Hold Space: Select | Left-click: Deselect | Right-click: Move/Attack | Mouse edges: Pan',
+      'Hold Space: Select | Left-click: Deselect | Right-click: Move/Attack | E: Spawn minion | Mouse edges: Pan',
       {
         fontSize: '12px',
         color: '#ffffff',
@@ -98,6 +104,12 @@ export class LevelScene extends Phaser.Scene {
       }
     );
     instructions.setScrollFactor(0);
+
+    // Currency display
+    this.currencyDisplay = new CurrencyDisplay(this);
+
+    // Setup spawn minion key
+    this.setupSpawnControls();
   }
 
   update(_time: number, delta: number): void {
@@ -138,13 +150,76 @@ export class LevelScene extends Phaser.Scene {
       for (const minion of minions) {
         const dist = Phaser.Math.Distance.Between(minion.x, minion.y, treasure.x, treasure.y);
         if (dist < collectDistance) {
+          const x = treasure.x;
+          const y = treasure.y;
           treasure.collect();
           this.treasures.splice(i, 1);
-          this.showClickEffect(treasure.x, treasure.y, CLICK_COLORS.collect);
+
+          // Add currency and show effects
+          this.currencyDisplay.add(this.TREASURE_VALUE);
+          this.showCollectEffect(x, y);
           break;
         }
       }
     }
+  }
+
+  /** Particle burst and floating text when collecting treasure */
+  private showCollectEffect(x: number, y: number): void {
+    // Particle burst
+    const particles: Phaser.GameObjects.Arc[] = [];
+    const particleCount = 8;
+
+    for (let i = 0; i < particleCount; i++) {
+      const angle = (i / particleCount) * Math.PI * 2;
+      const particle = this.add.circle(x, y, 4, 0xffd700);
+      particles.push(particle);
+
+      const distance = 40;
+      this.tweens.add({
+        targets: particle,
+        x: x + Math.cos(angle) * distance,
+        y: y + Math.sin(angle) * distance,
+        alpha: 0,
+        scale: 0,
+        duration: 300,
+        ease: 'Power2',
+        onComplete: () => particle.destroy(),
+      });
+    }
+
+    // Floating text above currency display
+    const displayX = this.cameras.main.width - 60;
+    const displayY = this.cameras.main.height - 50;
+
+    const floatingText = this.add.text(displayX, displayY, `+${this.TREASURE_VALUE}`, {
+      fontSize: '14px',
+      color: '#a855f7',
+      fontStyle: 'bold',
+    });
+    floatingText.setScrollFactor(0);
+    floatingText.setOrigin(0.5, 1);
+
+    this.tweens.add({
+      targets: floatingText,
+      y: displayY - 30,
+      alpha: 0,
+      duration: 800,
+      ease: 'Power2',
+      onComplete: () => floatingText.destroy(),
+    });
+  }
+
+  private setupSpawnControls(): void {
+    const eKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.E);
+
+    eKey?.on('down', () => {
+      const pointer = this.input.activePointer;
+
+      if (this.currencyDisplay.spend(this.MINION_COST)) {
+        this.spawnMinion(pointer.worldX, pointer.worldY);
+      }
+    });
   }
 
   private setupWhistleSelection(): void {
