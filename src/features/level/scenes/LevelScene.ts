@@ -385,7 +385,7 @@ export class LevelScene extends Phaser.Scene {
       const x = startX + col * spacing;
       const y = startY + row * spacing;
 
-      minion.send({ type: 'MOVE_TO', x, y });
+      minion.send({ type: 'MOVE_TO_EXACT', x, y });
     });
 
     this.showClickEffect(centerX, centerY, CLICK_COLORS.move);

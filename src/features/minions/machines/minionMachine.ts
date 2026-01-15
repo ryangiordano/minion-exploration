@@ -11,6 +11,8 @@ export interface MinionContext {
   combatTarget: Combatable | null;
   /** Original destination to return to after auto-combat */
   returnDestination: { x: number; y: number } | null;
+  /** Whether to use precise arrival (no arrival distance tolerance) */
+  preciseArrival: boolean;
 }
 
 /**
@@ -18,6 +20,7 @@ export interface MinionContext {
  */
 export type MinionEvent =
   | { type: 'MOVE_TO'; x: number; y: number }      // Click to move to location
+  | { type: 'MOVE_TO_EXACT'; x: number; y: number } // Move to exact location (grid lineup)
   | { type: 'ATTACK'; target: Combatable }         // Click to attack enemy
   | { type: 'ENEMY_NEARBY'; enemy: Combatable }    // Auto-aggro while moving
   | { type: 'ENEMY_DEFEATED' }                     // Combat target died
@@ -40,7 +43,10 @@ export const minionMachine = setup({
   actions: {
     setDestination: assign(({ event }) => {
       if (event.type === 'MOVE_TO') {
-        return { destination: { x: event.x, y: event.y } };
+        return { destination: { x: event.x, y: event.y }, preciseArrival: false };
+      }
+      if (event.type === 'MOVE_TO_EXACT') {
+        return { destination: { x: event.x, y: event.y }, preciseArrival: true };
       }
       return {};
     }),
@@ -81,11 +87,16 @@ export const minionMachine = setup({
     destination: null,
     combatTarget: null,
     returnDestination: null,
+    preciseArrival: false,
   },
   states: {
     idle: {
       on: {
         MOVE_TO: {
+          target: 'moving',
+          actions: 'setDestination',
+        },
+        MOVE_TO_EXACT: {
           target: 'moving',
           actions: 'setDestination',
         },
@@ -103,6 +114,9 @@ export const minionMachine = setup({
       on: {
         MOVE_TO: {
           // New move command overrides current
+          actions: 'setDestination',
+        },
+        MOVE_TO_EXACT: {
           actions: 'setDestination',
         },
         ATTACK: {
@@ -126,6 +140,10 @@ export const minionMachine = setup({
           target: 'retreating',
           actions: ['clearCombatTarget', 'setDestination'],
         },
+        MOVE_TO_EXACT: {
+          target: 'retreating',
+          actions: ['clearCombatTarget', 'setDestination'],
+        },
         ATTACK: {
           // New attack target
           actions: 'setCombatTarget',
@@ -141,6 +159,9 @@ export const minionMachine = setup({
       on: {
         MOVE_TO: {
           // New move command while retreating
+          actions: 'setDestination',
+        },
+        MOVE_TO_EXACT: {
           actions: 'setDestination',
         },
         ATTACK: {

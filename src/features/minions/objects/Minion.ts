@@ -11,6 +11,7 @@ import { minionMachine, MinionContext, MinionEvent, MinionState } from '../machi
 const MINION_RADIUS = 14;
 const DEFAULT_AGGRO_RADIUS = 100;
 const ARRIVAL_DISTANCE = 15;
+const PRECISE_ARRIVAL_DISTANCE = 2;
 
 // Default minion base stats at level 1
 const DEFAULT_BASE_STATS = {
@@ -436,8 +437,9 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
 
     const dest = context.destination;
     const dist = Phaser.Math.Distance.Between(this.x, this.y, dest.x, dest.y);
+    const arrivalDist = context.preciseArrival ? PRECISE_ARRIVAL_DISTANCE : ARRIVAL_DISTANCE;
 
-    if (dist <= ARRIVAL_DISTANCE) {
+    if (dist <= arrivalDist) {
       this.send({ type: 'ARRIVED' });
       this.movement.stop();
       return;
