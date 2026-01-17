@@ -16,3 +16,5 @@ export { EdgeScrollCamera, type EdgeScrollCameraConfig, type EdgeScrollState } f
 export { EdgeScrollIndicator, type EdgeScrollIndicatorConfig } from './EdgeScrollIndicator';
 export { CursorTarget } from './CursorTarget';
 export { DestinationIndicator, type DestinationIndicatorConfig } from './DestinationIndicator';
+export { DebuffManager, type DebuffType, type ActiveDebuff, type DebuffVisual, type DebuffVisualFactory } from './DebuffManager';
+export { StunVisual, createDebuffVisual } from './StunVisual';

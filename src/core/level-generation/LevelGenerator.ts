@@ -1,4 +1,4 @@
-import { EnemyTypeConfig, LACKEY_CONFIG, BRUTE_CONFIG } from '../../features/enemies';
+import { EnemyTypeConfig, CRITTER_CONFIG, LACKEY_CONFIG, BRUTE_CONFIG } from '../../features/enemies';
 
 /** Describes a single enemy to spawn */
 export interface EnemySpawn {
@@ -38,6 +38,10 @@ export interface LevelGeneratorConfig {
   bruteChancePerFloor: number;
   /** Enemy level = floor * this multiplier (floored) */
   enemyLevelMultiplier: number;
+  /** Last floor where critters appear */
+  critterEndFloor: number;
+  /** Floor where lackeys start appearing */
+  lackeyStartFloor: number;
 }
 
 const DEFAULT_CONFIG: LevelGeneratorConfig = {
@@ -45,10 +49,12 @@ const DEFAULT_CONFIG: LevelGeneratorConfig = {
   packsPerFloor: 0.5,
   baseLackeysPerPack: 3,
   lackeysPerFloor: 0.5,
-  bruteStartFloor: 2,
+  bruteStartFloor: 3,
   baseBruteChance: 0.3,
   bruteChancePerFloor: 0.1,
   enemyLevelMultiplier: 1,
+  critterEndFloor: 2,
+  lackeyStartFloor: 2,
 };
 
 /**
@@ -96,14 +102,17 @@ export class LevelGenerator {
       });
     }
 
-    // Add lackeys around
-    const lackeyCount = this.getLackeyCount(floor);
-    for (let i = 0; i < lackeyCount; i++) {
-      const angle = (i / lackeyCount) * Math.PI * 2;
-      // Lackeys spread out from center (or from brute if present)
+    // Determine fodder type based on floor
+    const fodderType = this.getFodderType(floor);
+    const fodderCount = this.getLackeyCount(floor);
+
+    // Add fodder enemies around
+    for (let i = 0; i < fodderCount; i++) {
+      const angle = (i / fodderCount) * Math.PI * 2;
+      // Fodder spread out from center (or from brute if present)
       const distance = hasBrute ? 0.6 + Math.random() * 0.4 : Math.random() * 0.5;
       enemies.push({
-        type: LACKEY_CONFIG,
+        type: fodderType,
         level: enemyLevel,
         offsetX: Math.cos(angle) * distance,
         offsetY: Math.sin(angle) * distance,
@@ -111,6 +120,25 @@ export class LevelGenerator {
     }
 
     return { enemies };
+  }
+
+  /** Get the appropriate fodder enemy type for this floor */
+  private getFodderType(floor: number): EnemyTypeConfig {
+    const hasCritters = floor <= this.config.critterEndFloor;
+    const hasLackeys = floor >= this.config.lackeyStartFloor;
+
+    // Floor 1: only critters
+    if (hasCritters && !hasLackeys) {
+      return CRITTER_CONFIG;
+    }
+
+    // Transition floors (e.g., floor 2): mix of critters and lackeys
+    if (hasCritters && hasLackeys) {
+      return Math.random() < 0.5 ? CRITTER_CONFIG : LACKEY_CONFIG;
+    }
+
+    // Later floors: only lackeys
+    return LACKEY_CONFIG;
   }
 
   private getLackeyCount(floor: number): number {

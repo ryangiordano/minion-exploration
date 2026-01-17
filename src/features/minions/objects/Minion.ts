@@ -3,7 +3,7 @@ import { createActor, Actor } from 'xstate';
 import { TargetedMovement } from '../../../core/components/TargetedMovement';
 import { AttackBehavior, AttackUpdateContext } from '../../../core/components/AttackBehavior';
 import { CombatManager } from '../../../core/components/CombatManager';
-import { LevelingSystem, UnitStatBars, defaultXpCurve, CombatXpTracker, LevelUpEffect, FloatingText, DestinationIndicator } from '../../../core/components';
+import { LevelingSystem, UnitStatBars, defaultXpCurve, CombatXpTracker, LevelUpEffect, FloatingText, DestinationIndicator, DebuffManager, createDebuffVisual } from '../../../core/components';
 import { Combatable, Attacker, AttackConfig, Selectable } from '../../../core/types/interfaces';
 import { AbilitySystem, GemOwner, AbilityGem } from '../../../core/abilities';
 import { minionMachine, MinionContext, MinionEvent, MinionState } from '../machines/minionMachine';
@@ -81,6 +81,9 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
   // Ability system
   private abilitySystem: AbilitySystem;
   private nearbyAllies: Minion[] = [];
+
+  // Debuff system
+  private debuffs!: DebuffManager;
 
   constructor(scene: Phaser.Scene, x: number, y: number, config: MinionConfig = {}) {
     super(scene, x, y, '');
@@ -221,6 +224,9 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
 
     // Destination indicator (shows line to move destination)
     this.destinationIndicator = new DestinationIndicator(scene);
+
+    // Debuff system
+    this.debuffs = new DebuffManager(scene, createDebuffVisual);
   }
 
   // ============ Hop Animation ============
@@ -493,6 +499,14 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
     this.updateStatBars();
     this.abilitySystem.update(delta);
     this.destinationIndicator.update(this.x, this.y);
+    this.debuffs.update(delta, this.x, this.y);
+
+    // If stunned, skip all behavior (can't move or attack)
+    if (this.debuffs.isStunned()) {
+      this.movement.stop();
+      this.stopHopping();
+      return;
+    }
 
     const state = this.getState();
     const context = this.getContext();
@@ -684,6 +698,13 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
     });
   }
 
+  /**
+   * Apply a debuff to this minion
+   */
+  public applyDebuff(type: 'stun' | 'slow', durationMs: number): void {
+    this.debuffs.apply(type, durationMs);
+  }
+
   destroy(fromScene?: boolean): void {
     this.actor.stop();
     this.hopTween?.stop();
@@ -691,6 +712,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
     this.statBars.destroy();
     this.gemSlotDisplay.destroy();
     this.levelUpEffect.destroy();
+    this.debuffs.destroy();
     super.destroy(fromScene);
   }
 }

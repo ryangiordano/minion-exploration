@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { Combatable, AttackConfig, AggroCapable } from '../../../core/types/interfaces';
-import { StatBar, HP_BAR_DEFAULTS, AttackBehavior, ThreatTracker, TargetedMovement, LevelingSystem, defaultXpCurve, FloatingText } from '../../../core/components';
+import { StatBar, HP_BAR_DEFAULTS, AttackBehavior, ThreatTracker, TargetedMovement, LevelingSystem, defaultXpCurve, FloatingText, DebuffManager, createDebuffVisual } from '../../../core/components';
 import { EnemyTypeConfig, EnemyConfig } from '../types';
 import { LACKEY_CONFIG } from '../configs';
 
@@ -25,6 +25,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
 
   // Visual feedback
   private floatingText!: FloatingText;
+
+  // Debuff system
+  private debuffs: DebuffManager;
 
   constructor(scene: Phaser.Scene, x: number, y: number, config: EnemyConfig = {}) {
     super(scene, x, y, '');
@@ -95,6 +98,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
 
     // Floating damage text
     this.floatingText = new FloatingText(scene);
+
+    // Debuff system
+    this.debuffs = new DebuffManager(scene, createDebuffVisual);
 
     // Setup attack behavior for fighting back (damage from stats)
     this.attackBehavior = new AttackBehavior({
@@ -263,6 +269,15 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
     // Update HP bar position
     this.updateHpBar();
 
+    // Update debuffs
+    this.debuffs.update(delta, this.x, this.y);
+
+    // If stunned, skip all behavior (can't move or attack)
+    if (this.debuffs.isStunned()) {
+      this.movement.stop();
+      return;
+    }
+
     // Update threat tracker with nearby targets
     this.threatTracker.update(delta, this.x, this.y, this.nearbyTargets);
 
@@ -347,8 +362,16 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
     });
   }
 
+  /**
+   * Apply a debuff to this enemy
+   */
+  public applyDebuff(type: 'stun' | 'slow', durationMs: number): void {
+    this.debuffs.apply(type, durationMs);
+  }
+
   destroy(fromScene?: boolean): void {
     this.hpBar.destroy();
+    this.debuffs.destroy();
     super.destroy(fromScene);
   }
 }

@@ -1,7 +1,7 @@
 // Import gems for registration FIRST (before exports to ensure side effects run)
 import { GemRegistry } from './data/GemRegistry';
 import { VitalityGem } from '../../core/abilities/gems/VitalityGem';
-import { KnockbackGem } from '../../core/abilities/gems/KnockbackGem';
+import { StunGem } from '../../core/abilities/gems/StunGem';
 import { RangedAttackGem } from '../../core/abilities/gems/RangedAttackGem';
 import { HealPulseGem } from '../../core/abilities/gems/HealPulseGem';
 import { LifestealGem } from '../../core/abilities/gems/LifestealGem';
@@ -17,12 +17,12 @@ GemRegistry.register({
 });
 
 GemRegistry.register({
-  id: 'knockback',
-  name: 'Knockback Gem',
-  description: 'Push enemies back on hit',
+  id: 'stun',
+  name: 'Stun Gem',
+  description: '25% chance to stun enemies',
   essenceCost: 20,
   gemType: 'passive',
-  createGem: () => new KnockbackGem(),
+  createGem: () => new StunGem(),
 });
 
 GemRegistry.register({

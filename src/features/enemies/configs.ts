@@ -1,5 +1,27 @@
 import { EnemyTypeConfig } from './types';
 
+/** Critter: Tiny, fragile - early floor fodder for learning mechanics */
+export const CRITTER_CONFIG: EnemyTypeConfig = {
+  radius: 12,
+  color: 0x88aa66,
+  strokeColor: 0x556633,
+  speed: 70,
+  attackCooldown: 2500,
+  baseStats: {
+    maxHp: 3,
+    maxMp: 0,
+    strength: 1,
+    dexterity: 1,
+    magic: 1,
+    resilience: 0,
+  },
+  statGrowth: {
+    maxHp: 1,
+    strength: 0.1,
+  },
+  essenceDrop: [1, 1],
+};
+
 /** Lackey: Small, fast, weak - swarm fodder */
 export const LACKEY_CONFIG: EnemyTypeConfig = {
   radius: 20,
