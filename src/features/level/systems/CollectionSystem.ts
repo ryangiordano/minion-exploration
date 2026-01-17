@@ -36,7 +36,7 @@ export class CollectionSystem<T extends Collectible> {
   private onCollectCallback?: (event: CollectionEvent<T>) => void;
 
   constructor(config: CollectionSystemConfig = {}) {
-    this.collectDistance = config.collectDistance ?? 25;
+    this.collectDistance = config.collectDistance ?? 40;
   }
 
   /** Set the callback for when an item is collected */
