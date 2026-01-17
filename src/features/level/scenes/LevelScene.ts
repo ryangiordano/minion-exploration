@@ -12,7 +12,7 @@ import { WorldGem, GemDropper, InventoryState, getGemVisual, InventoryModal, Gem
 import { GameState, PartyManager } from '../../../core/game-state';
 import { LevelGenerator, LevelData } from '../../../core/level-generation';
 import { FloorTransition, DefeatTransition } from '../../../core/floor-transition';
-import { Vfx, MoveCommandIndicator } from '../../../core/vfx';
+import { Vfx, TargetingIndicator } from '../../../core/vfx';
 import { CollectionSystem, CommandSystem } from '../systems';
 
 export class LevelScene extends Phaser.Scene {
@@ -57,7 +57,7 @@ export class LevelScene extends Phaser.Scene {
 
   // Visual effects
   private vfx!: Vfx;
-  private moveCommandIndicator!: MoveCommandIndicator;
+  private targetingIndicator!: TargetingIndicator;
   private isInMoveCommandMode = false;
 
   // Roguelike state
@@ -208,10 +208,10 @@ export class LevelScene extends Phaser.Scene {
     // Update party display
     this.partyDisplay.update();
 
-    // Update move command indicator if active
+    // Update targeting indicator if in move command mode
     if (this.isInMoveCommandMode) {
       const pointer = this.input.activePointer;
-      this.moveCommandIndicator.update(pointer.worldX, pointer.worldY);
+      this.targetingIndicator.update(pointer.worldX, pointer.worldY);
     }
 
     // Get active entities
@@ -460,36 +460,30 @@ export class LevelScene extends Phaser.Scene {
   }
 
   private setupMoveCommandControls(): void {
-    // Initialize the move command indicator
-    this.moveCommandIndicator = new MoveCommandIndicator(this);
-    this.moveCommandIndicator.setUnitSource(() => this.getSelectedMinions());
+    // Initialize targeting indicator (dashed lines during A key mode)
+    this.targetingIndicator = new TargetingIndicator(this);
+    this.targetingIndicator.setUnitSource(() => this.getSelectedMinions());
 
-    // A key to enter move command mode
+    // A key to enter move command mode (alternative to right-click)
     const aKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.A);
     aKey?.on('down', () => {
       if (!this.selectionManager.hasSelection()) return;
       if (this.isInMoveCommandMode) return;
 
-      this.enterMoveCommandMode();
+      this.isInMoveCommandMode = true;
+      this.targetingIndicator.show();
+      this.input.setDefaultCursor('crosshair');
     });
 
     // Escape to cancel move command mode
     const escKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
     escKey?.on('down', () => {
       if (this.isInMoveCommandMode) {
-        this.exitMoveCommandMode();
+        this.isInMoveCommandMode = false;
+        this.targetingIndicator.hide();
+        this.input.setDefaultCursor('default');
       }
     });
-  }
-
-  private enterMoveCommandMode(): void {
-    this.isInMoveCommandMode = true;
-    this.moveCommandIndicator.show();
-  }
-
-  private exitMoveCommandMode(): void {
-    this.isInMoveCommandMode = false;
-    this.moveCommandIndicator.hide();
   }
 
   private tryOpenUpgradeMenu(): void {
@@ -563,17 +557,21 @@ export class LevelScene extends Phaser.Scene {
 
   private setupClickControls(): void {
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      // Handle move command mode
+      // Handle move command mode (A key targeting)
       if (this.isInMoveCommandMode) {
         if (pointer.leftButtonDown()) {
           // Confirm move command
           this.commandSystem.moveToWithScatter(pointer.worldX, pointer.worldY);
-          this.exitMoveCommandMode();
+          this.isInMoveCommandMode = false;
+          this.targetingIndicator.hide();
+          this.input.setDefaultCursor('default');
           return;
         }
         if (pointer.rightButtonDown()) {
           // Cancel move command mode
-          this.exitMoveCommandMode();
+          this.isInMoveCommandMode = false;
+          this.targetingIndicator.hide();
+          this.input.setDefaultCursor('default');
           return;
         }
       }

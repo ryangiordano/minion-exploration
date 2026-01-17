@@ -3,7 +3,7 @@ import { createActor, Actor } from 'xstate';
 import { TargetedMovement } from '../../../core/components/TargetedMovement';
 import { AttackBehavior, AttackUpdateContext } from '../../../core/components/AttackBehavior';
 import { CombatManager } from '../../../core/components/CombatManager';
-import { LevelingSystem, UnitStatBars, defaultXpCurve, CombatXpTracker, LevelUpEffect, FloatingText } from '../../../core/components';
+import { LevelingSystem, UnitStatBars, defaultXpCurve, CombatXpTracker, LevelUpEffect, FloatingText, DestinationIndicator } from '../../../core/components';
 import { Combatable, Attacker, AttackConfig, Selectable } from '../../../core/types/interfaces';
 import { AbilitySystem, GemOwner, AbilityGem } from '../../../core/abilities';
 import { minionMachine, MinionContext, MinionEvent, MinionState } from '../machines/minionMachine';
@@ -52,6 +52,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
   private gemSlotDisplay!: GemSlotDisplay;
   private levelUpEffect!: LevelUpEffect;
   private floatingText!: FloatingText;
+  private destinationIndicator!: DestinationIndicator;
 
   // Movement and combat components
   private movement!: TargetedMovement;
@@ -217,6 +218,9 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
 
     // Gem slot display (shows equipped gems below minion)
     this.gemSlotDisplay = new GemSlotDisplay(scene);
+
+    // Destination indicator (shows line to move destination)
+    this.destinationIndicator = new DestinationIndicator(scene);
   }
 
   // ============ Hop Animation ============
@@ -276,15 +280,22 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
 
     // Handle state transition side effects
     if (newState === 'fighting' && context.combatTarget && prevState !== 'fighting') {
-      // Entering combat
+      // Entering combat - hide destination indicator
       this.combatAngleOffset = Math.random() * Math.PI * 2;
       this.attackBehavior.engage(context.combatTarget);
       this.combatManager?.startCombat(this, context.combatTarget);
+      this.destinationIndicator.hide();
     }
 
     if (newState === 'idle' && prevState !== 'idle') {
-      // Entering idle
+      // Entering idle - hide destination indicator
       this.movement.stop();
+      this.destinationIndicator.hide();
+    }
+
+    // Show destination indicator when receiving move commands
+    if (event.type === 'MOVE_TO' || event.type === 'MOVE_TO_EXACT') {
+      this.destinationIndicator.setDestination({ x: event.x, y: event.y });
     }
   }
 
@@ -481,6 +492,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
 
     this.updateStatBars();
     this.abilitySystem.update(delta);
+    this.destinationIndicator.update(this.x, this.y);
 
     const state = this.getState();
     const context = this.getContext();
@@ -613,6 +625,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
     this.defeated = true;
     this.actor.stop();
     this.deselect();
+    this.destinationIndicator.destroy();
 
     // Collect gem IDs before destruction
     const droppedGemIds = this.getEquippedGemIds();
