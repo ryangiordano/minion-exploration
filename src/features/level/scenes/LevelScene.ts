@@ -5,26 +5,17 @@ import { Enemy, EnemyTypeConfig } from '../../enemies';
 import { CombatManager, CombatXpTracker, GameEventManager, EdgeScrollCamera, WhistleSelection, SelectionManager } from '../../../core/components';
 import { CurrencyDisplay } from '../ui/CurrencyDisplay';
 import { FloorDisplay } from '../ui/FloorDisplay';
-import { Combatable } from '../../../core/types/interfaces';
 import { UpgradeMenu } from '../../upgrade';
 import { AbilityGem } from '../../../core/abilities/types';
-import { WorldGem, GemDropper, InventoryState, getGemVisual, InventoryModal, InventoryGem } from '../../inventory';
+import { WorldGem, GemDropper, InventoryState, getGemVisual, InventoryModal, GemEquipmentSystem } from '../../inventory';
 import { GameState } from '../../../core/game-state';
 import { LevelGenerator, LevelData } from '../../../core/level-generation';
-import { FloorTransition } from '../../../core/floor-transition';
+import { FloorTransition, DefeatTransition } from '../../../core/floor-transition';
 import { Vfx } from '../../../core/vfx';
-import { CollectionSystem } from '../systems';
-
-// Visual feedback colors
-const CLICK_COLORS = {
-  move: 0xffff00,     // Yellow - move to location
-  attack: 0xff4444,   // Red - attack enemy
-  collect: 0x50c878,  // Green - collect treasure
-} as const;
+import { CollectionSystem, CommandSystem } from '../systems';
 
 export class LevelScene extends Phaser.Scene {
   private minions: Minion[] = [];
-  private treasures: Treasure[] = [];
   private enemies: Enemy[] = [];
   private combatManager = new CombatManager();
   private xpTracker = new CombatXpTracker({ baseXpPerKill: 10 });
@@ -33,9 +24,10 @@ export class LevelScene extends Phaser.Scene {
   // Camera control
   private edgeScrollCamera!: EdgeScrollCamera;
 
-  // Selection
+  // Selection and commands
   private selectionManager = new SelectionManager();
   private whistleSelection?: WhistleSelection;
+  private commandSystem!: CommandSystem;
 
   // Currency
   private currencyDisplay!: CurrencyDisplay;
@@ -54,7 +46,7 @@ export class LevelScene extends Phaser.Scene {
   // Inventory
   private inventory = new InventoryState();
   private inventoryModal?: InventoryModal;
-  private pendingGemEquip: InventoryGem | null = null;
+  private gemEquipment!: GemEquipmentSystem;
 
   // Upgrade menu
   private upgradeMenu?: UpgradeMenu;
@@ -110,6 +102,14 @@ export class LevelScene extends Phaser.Scene {
 
     // Visual effects manager
     this.vfx = new Vfx(this);
+
+    // Command system for unit commands
+    this.commandSystem = new CommandSystem({
+      vfx: this.vfx,
+      getSelectedUnits: () => this.getSelectedMinions(),
+      scatterRadius: MINION_VISUAL_RADIUS * 2,
+      gridSpacing: MINION_VISUAL_RADIUS * 2 + 10,
+    });
 
     // Spawn treasures around the world
     this.spawnTreasures(this.worldWidth, this.worldHeight);
@@ -220,53 +220,10 @@ export class LevelScene extends Phaser.Scene {
   private onDefeat(): void {
     this.isTransitioning = true;
 
-    // Play defeat transition (fade to white with text)
-    this.playDefeatTransition(() => {
-      // Reset game state and restart scene
+    const transition = new DefeatTransition(this);
+    transition.play(() => {
       this.gameState.reset();
       this.scene.restart();
-    });
-  }
-
-  private playDefeatTransition(onComplete: () => void): void {
-    const { width, height } = this.cameras.main;
-
-    // Create white overlay
-    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0xffffff, 0);
-    overlay.setScrollFactor(0);
-    overlay.setDepth(2001);
-
-    // Fade to white
-    this.tweens.add({
-      targets: overlay,
-      alpha: 1,
-      duration: 800,
-      ease: 'Power2',
-      onComplete: () => {
-        // Show text
-        const text = this.add.text(width / 2, height / 2, 'You return to the surface...', {
-          fontSize: '28px',
-          color: '#000000',
-          fontStyle: 'italic',
-        });
-        text.setOrigin(0.5, 0.5);
-        text.setScrollFactor(0);
-        text.setDepth(2002);
-        text.setAlpha(0);
-
-        // Fade in text
-        this.tweens.add({
-          targets: text,
-          alpha: 1,
-          duration: 300,
-          ease: 'Power2',
-        });
-
-        // Wait then complete
-        this.time.delayedCall(1500, () => {
-          onComplete();
-        });
-      },
     });
   }
 
@@ -393,28 +350,34 @@ export class LevelScene extends Phaser.Scene {
   }
 
   private setupInventoryControls(): void {
+    // Initialize gem equipment system
+    this.gemEquipment = new GemEquipmentSystem({
+      inventory: this.inventory,
+      onEquip: (target, _gem) => {
+        // Show equip effect (target is a Minion)
+        this.showGemEquipEffect(target as Minion);
+        this.inventoryModal?.close();
+      },
+    });
+
     // Initialize inventory modal
     this.inventoryModal = new InventoryModal({
       scene: this,
       inventory: this.inventory,
       onGemSelected: (gem) => {
-        this.pendingGemEquip = gem;
+        this.gemEquipment.selectGem(gem);
       },
       onClose: () => {
-        // Clear pending if closed without equipping
-        if (this.pendingGemEquip) {
-          this.pendingGemEquip = null;
+        // Cancel pending equip if closed without equipping
+        if (this.gemEquipment.isAwaitingTarget()) {
+          this.gemEquipment.cancel();
         }
       },
     });
 
     // I key to toggle inventory
     const iKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.I);
-    if (!iKey) {
-      console.error('Failed to add I key');
-    }
     iKey?.on('down', () => {
-      console.log('I key pressed, modal open:', this.inventoryModal?.isOpen());
       if (this.inventoryModal?.isOpen()) {
         this.inventoryModal.close();
       } else {
@@ -474,33 +437,8 @@ export class LevelScene extends Phaser.Scene {
 
   /** Arrange selected minions in a grid formation centered on the mouse position */
   private commandGridLineup(): void {
-    const selectedMinions = this.getSelectedMinions();
-    if (selectedMinions.length === 0) return;
-
     const pointer = this.input.activePointer;
-    const centerX = pointer.worldX;
-    const centerY = pointer.worldY;
-
-    // Space minions so they don't overlap (diameter + small gap)
-    const spacing = MINION_VISUAL_RADIUS * 2 + 10;
-    const gridSize = Math.ceil(Math.sqrt(selectedMinions.length));
-
-    // Calculate grid offset so formation is centered
-    const gridWidth = (gridSize - 1) * spacing;
-    const gridHeight = (gridSize - 1) * spacing;
-    const startX = centerX - gridWidth / 2;
-    const startY = centerY - gridHeight / 2;
-
-    selectedMinions.forEach((minion, index) => {
-      const col = index % gridSize;
-      const row = Math.floor(index / gridSize);
-      const x = startX + col * spacing;
-      const y = startY + row * spacing;
-
-      minion.send({ type: 'MOVE_TO_EXACT', x, y });
-    });
-
-    this.showClickEffect(centerX, centerY, CLICK_COLORS.move);
+    this.commandSystem.gridLineup(pointer.worldX, pointer.worldY);
   }
 
   private setupWhistleSelection(): void {
@@ -526,41 +464,13 @@ export class LevelScene extends Phaser.Scene {
 
       // Right-click on background = move command for selected minions
       if (pointer.rightButtonDown() && this.selectionManager.hasSelection()) {
-        this.getSelectedMinions().forEach(minion => {
-          // Scatter minions around the target point
-          const offset = this.getScatterOffset();
-          minion.send({ type: 'MOVE_TO', x: pointer.worldX + offset.x, y: pointer.worldY + offset.y });
-        });
-        this.showClickEffect(pointer.worldX, pointer.worldY, CLICK_COLORS.move);
+        this.commandSystem.moveToWithScatter(pointer.worldX, pointer.worldY);
       }
     });
   }
 
-  /** Get a random offset for scattering minions around a target point */
-  private getScatterOffset(radius: number = MINION_VISUAL_RADIUS * 2): { x: number; y: number } {
-    const angle = Math.random() * Math.PI * 2;
-    const distance = Math.random() * radius;
-    return {
-      x: Math.cos(angle) * distance,
-      y: Math.sin(angle) * distance,
-    };
-  }
-
   private getSelectedMinions(): Minion[] {
     return this.minions.filter(m => m.isSelected());
-  }
-
-  private commandAttack(target: Combatable): void {
-    if (!this.selectionManager.hasSelection()) return;
-
-    this.getSelectedMinions().forEach(minion => {
-      minion.send({ type: 'ATTACK', target });
-    });
-    this.showClickEffect(target.x, target.y, CLICK_COLORS.attack);
-  }
-
-  private showClickEffect(x: number, y: number, color: number): void {
-    this.vfx.click.show(x, y, color);
   }
 
   private createReferenceGrid(worldWidth: number, worldHeight: number): void {
@@ -599,8 +509,8 @@ export class LevelScene extends Phaser.Scene {
     // Make minion clickable for gem equipping
     minion.setInteractive({ useHandCursor: true });
     minion.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (pointer.leftButtonDown() && this.pendingGemEquip) {
-        this.equipGemOnMinion(minion, this.pendingGemEquip);
+      if (pointer.leftButtonDown() && this.gemEquipment.isAwaitingTarget()) {
+        this.gemEquipment.tryEquipOn(minion);
       }
     });
 
@@ -621,41 +531,18 @@ export class LevelScene extends Phaser.Scene {
     return minion;
   }
 
-  private equipGemOnMinion(minion: Minion, inventoryGem: InventoryGem): void {
-    // Create the actual ability gem from inventory
-    const abilityGem = this.inventory.createGemInstance(inventoryGem);
-    if (!abilityGem) return;
-
-    // Remove from inventory
-    this.inventory.removeGem(inventoryGem.instanceId);
-
-    // Equip on minion
-    minion.equipGem(abilityGem);
-
-    // Clear pending and close inventory
-    this.pendingGemEquip = null;
-    this.inventoryModal?.close();
-
-    // Show equip effect
-    this.showGemEquipEffect(minion);
-  }
-
   private spawnTreasures(worldWidth: number, worldHeight: number): void {
     for (let i = 0; i < 10; i++) {
       const x = Phaser.Math.Between(100, worldWidth - 100);
       const y = Phaser.Math.Between(100, worldHeight - 100);
 
       const treasure = new Treasure(this, x, y);
-      this.treasures.push(treasure);
+      this.treasureCollection.add(treasure);
 
       // Right-click on treasure = move selected minions to collect
       treasure.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
         if (pointer.rightButtonDown() && this.selectionManager.hasSelection()) {
-          this.getSelectedMinions().forEach(minion => {
-            const offset = this.getScatterOffset();
-            minion.send({ type: 'MOVE_TO', x: treasure.x + offset.x, y: treasure.y + offset.y });
-          });
-          this.showClickEffect(treasure.x, treasure.y, CLICK_COLORS.collect);
+          this.commandSystem.collect(treasure.x, treasure.y);
           event.stopPropagation();
         }
       });
@@ -730,22 +617,19 @@ export class LevelScene extends Phaser.Scene {
       // Drop essence loot
       const dropAmount = deadEnemy.getEssenceDropAmount();
       this.essenceDropper.drop(deadEnemy.x, deadEnemy.y, dropAmount, (treasure) => {
-        this.treasures.push(treasure);
+        this.treasureCollection.add(treasure);
       });
 
       // Drop a random gem (100% chance for now)
-      const gem = this.gemDropper.dropRandom(deadEnemy.x, deadEnemy.y, (worldGem) => {
-        this.worldGems.push(worldGem);
+      this.gemDropper.dropRandom(deadEnemy.x, deadEnemy.y, (worldGem) => {
+        this.gemCollection.add(worldGem);
       });
-      if (!gem) {
-        console.warn('No gems registered - cannot drop');
-      }
     });
 
     // Right-click on enemy = attack command for selected minions
     enemy.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
-      if (pointer.rightButtonDown()) {
-        this.commandAttack(enemy);
+      if (pointer.rightButtonDown() && this.selectionManager.hasSelection()) {
+        this.commandSystem.attack(enemy);
         event.stopPropagation();
       }
     });
