@@ -6,12 +6,14 @@ import { CurrencyDisplay } from '../../level/ui/CurrencyDisplay';
 import { GemRegistry, GemRegistryEntry } from '../data/GemRegistry';
 import { InventoryState, InventoryGem, getGemVisual } from '../../inventory';
 
-// Larger panel for tabular layout
-const PANEL_WIDTH = 340;
+// Two-panel layout: left panel for gems, right panel for stats
+const LEFT_PANEL_WIDTH = 340;
+const RIGHT_PANEL_WIDTH = 180;
+const PANEL_GAP = 8;
+const TOTAL_WIDTH = LEFT_PANEL_WIDTH + PANEL_GAP + RIGHT_PANEL_WIDTH;
 const PANEL_PADDING = 16;
 const ROW_HEIGHT = 48;
 const CORNER_RADIUS = 8;
-const PANEL_OFFSET_Y = -180;
 
 const COLORS = {
   background: 0x1a1a2e,
@@ -28,6 +30,12 @@ const COLORS = {
   button: '#44ff44',
   buttonDisabled: '#444444',
   remove: '#ff6666',
+  statLabel: '#888888',
+  statValue: '#ffffff',
+  strength: '#ff8844',
+  magic: '#aa66ff',
+  dexterity: '#44ff88',
+  resilience: '#66aaff',
 };
 
 export interface UpgradeMenuConfig {
@@ -43,8 +51,9 @@ export interface UpgradeMenuConfig {
 }
 
 /**
- * Minion management panel with tabular gem layout.
- * Shows minion stats, equipped gems, inventory gems, and repair option.
+ * Minion management panel with two-panel layout.
+ * Left panel: equipped gems, inventory gems, repair option.
+ * Right panel: all combat stats.
  */
 export class UpgradeMenu {
   private scene: Phaser.Scene;
@@ -69,6 +78,9 @@ export class UpgradeMenu {
   // Pagination state for inventory section
   private inventoryPage = 0;
   private inventoryGemsPerPage = 4;
+
+  // Track panel height for click-outside detection
+  private currentPanelHeight = 0;
 
   constructor(config: UpgradeMenuConfig) {
     this.scene = config.scene;
@@ -97,26 +109,51 @@ export class UpgradeMenu {
     });
   }
 
-  private drawBackground(height: number): void {
+  /** Draw both panels' backgrounds */
+  private drawBackground(leftHeight: number, rightHeight: number): void {
     this.background.clear();
 
+    const maxHeight = Math.max(leftHeight, rightHeight);
+    const leftX = -TOTAL_WIDTH / 2;
+    const rightX = leftX + LEFT_PANEL_WIDTH + PANEL_GAP;
+
+    // Left panel background
     this.background.fillStyle(COLORS.background, 0.95);
     this.background.fillRoundedRect(
-      -PANEL_WIDTH / 2,
-      -height / 2,
-      PANEL_WIDTH,
-      height,
+      leftX,
+      -maxHeight / 2,
+      LEFT_PANEL_WIDTH,
+      maxHeight,
+      CORNER_RADIUS
+    );
+    this.background.lineStyle(2, COLORS.border, 1);
+    this.background.strokeRoundedRect(
+      leftX,
+      -maxHeight / 2,
+      LEFT_PANEL_WIDTH,
+      maxHeight,
       CORNER_RADIUS
     );
 
-    this.background.lineStyle(2, COLORS.border, 1);
-    this.background.strokeRoundedRect(
-      -PANEL_WIDTH / 2,
-      -height / 2,
-      PANEL_WIDTH,
-      height,
+    // Right panel background
+    this.background.fillStyle(COLORS.background, 0.95);
+    this.background.fillRoundedRect(
+      rightX,
+      -maxHeight / 2,
+      RIGHT_PANEL_WIDTH,
+      maxHeight,
       CORNER_RADIUS
     );
+    this.background.lineStyle(2, COLORS.border, 1);
+    this.background.strokeRoundedRect(
+      rightX,
+      -maxHeight / 2,
+      RIGHT_PANEL_WIDTH,
+      maxHeight,
+      CORNER_RADIUS
+    );
+
+    this.currentPanelHeight = maxHeight;
   }
 
   public open(minion: Minion): void {
@@ -125,28 +162,8 @@ export class UpgradeMenu {
     this.targetMinion = minion;
     this.isMenuOpen = true;
     this.inventoryPage = 0;
-    this.clearDynamicElements();
 
-    // Build the UI
-    let currentY = 0;
-    currentY = this.renderHeader(minion, currentY);
-    currentY = this.renderEquippedSection(minion, currentY);
-    currentY = this.renderInventorySection(minion, currentY);
-    currentY = this.renderFooter(minion, currentY);
-
-    // Calculate actual height needed and draw background
-    const totalHeight = currentY + PANEL_PADDING;
-    this.drawBackground(totalHeight);
-
-    // Reposition all elements relative to centered panel
-    const offsetY = -totalHeight / 2;
-    this.dynamicElements.forEach(el => {
-      if ('y' in el) {
-        (el as unknown as { y: number }).y += offsetY;
-      }
-    });
-
-    this.updatePosition(totalHeight);
+    this.renderFullMenu(minion);
 
     // Fade in
     this.container.setAlpha(0);
@@ -164,8 +181,9 @@ export class UpgradeMenu {
         if (!this.isMenuOpen) return;
         const localX = pointer.worldX - this.container.x;
         const localY = pointer.worldY - this.container.y;
-        const halfH = totalHeight / 2;
-        if (localX < -PANEL_WIDTH / 2 || localX > PANEL_WIDTH / 2 ||
+        const halfH = this.currentPanelHeight / 2;
+        // Check if click is outside both panels
+        if (localX < -TOTAL_WIDTH / 2 || localX > TOTAL_WIDTH / 2 ||
             localY < -halfH || localY > halfH) {
           this.close();
           this.onCancel();
@@ -175,13 +193,48 @@ export class UpgradeMenu {
     });
   }
 
-  /** Render header with minion stats */
-  private renderHeader(minion: Minion, startY: number): number {
+  /** Render the complete menu (both panels) */
+  private renderFullMenu(minion: Minion): void {
+    this.clearDynamicElements();
+
+    const leftX = -TOTAL_WIDTH / 2;
+    const rightX = leftX + LEFT_PANEL_WIDTH + PANEL_GAP;
+
+    // Render left panel content
+    let leftY = 0;
+    leftY = this.renderLeftHeader(minion, leftX, leftY);
+    leftY = this.renderEquippedSection(minion, leftX, leftY);
+    leftY = this.renderInventorySection(minion, leftX, leftY);
+    leftY = this.renderFooter(minion, leftX, leftY);
+    const leftHeight = leftY + PANEL_PADDING;
+
+    // Render right panel content (stats)
+    let rightY = 0;
+    rightY = this.renderStatsPanel(minion, rightX, rightY);
+    const rightHeight = rightY + PANEL_PADDING;
+
+    // Draw backgrounds
+    this.drawBackground(leftHeight, rightHeight);
+
+    // Reposition all elements relative to centered panels
+    const maxHeight = Math.max(leftHeight, rightHeight);
+    const offsetY = -maxHeight / 2;
+    this.dynamicElements.forEach(el => {
+      if ('y' in el) {
+        (el as unknown as { y: number }).y += offsetY;
+      }
+    });
+
+    this.centerOnScreen();
+  }
+
+  /** Render left panel header with title */
+  private renderLeftHeader(_minion: Minion, panelX: number, startY: number): number {
     let y = startY + PANEL_PADDING;
-    const leftX = -PANEL_WIDTH / 2 + PANEL_PADDING;
+    const centerX = panelX + LEFT_PANEL_WIDTH / 2;
 
     // Title
-    const title = this.scene.add.text(0, y, 'MINION', {
+    const title = this.scene.add.text(centerX, y, 'MINION', {
       fontFamily: 'Arial',
       fontSize: '14px',
       color: COLORS.title,
@@ -192,44 +245,102 @@ export class UpgradeMenu {
     this.dynamicElements.push(title);
     y += 22;
 
-    // HP bar
-    const hp = minion.getCurrentHp();
-    const maxHp = minion.getMaxHp();
-    y = this.renderStatBar(leftX, y, 'HP', hp, maxHp, COLORS.hp);
-
-    // MP bar
-    const mp = minion.getCurrentMp();
-    const maxMp = minion.getMaxMp();
-    y = this.renderStatBar(leftX, y, 'MP', mp, maxMp, COLORS.mp);
-
-    // XP progress bar
-    const level = minion.getLevel();
-    const xp = minion.getXp();
-    const xpToNext = minion.getXpToNextLevel();
-    y = this.renderXpBar(leftX, y, level, xp, xpToNext);
-
     // Divider
-    y = this.renderDivider(y);
+    y = this.renderDivider(panelX, LEFT_PANEL_WIDTH, y);
 
     return y;
   }
 
-  /** Render a stat bar (HP or MP) */
-  private renderStatBar(x: number, y: number, label: string, current: number, max: number, color: string): number {
-    const barWidth = 120;
-    const barHeight = 10;
+  /** Render the stats panel on the right */
+  private renderStatsPanel(minion: Minion, panelX: number, startY: number): number {
+    let y = startY + PANEL_PADDING;
+    const leftX = panelX + PANEL_PADDING;
+    const centerX = panelX + RIGHT_PANEL_WIDTH / 2;
+
+    // Title
+    const title = this.scene.add.text(centerX, y, 'STATS', {
+      fontFamily: 'Arial',
+      fontSize: '14px',
+      color: COLORS.title,
+      fontStyle: 'bold',
+    });
+    title.setOrigin(0.5, 0);
+    this.container.add(title);
+    this.dynamicElements.push(title);
+    y += 22;
+
+    // Divider
+    y = this.renderDivider(panelX, RIGHT_PANEL_WIDTH, y);
+
+    // Get effective stats
+    const stats = (minion as unknown as { getEffectiveStats(): Record<string, number> }).getEffectiveStats?.()
+      ?? this.getStatsFromMinion(minion);
+
+    // HP bar
+    const hp = minion.getCurrentHp();
+    const maxHp = minion.getMaxHp();
+    y = this.renderMiniStatBar(leftX, y, 'HP', hp, maxHp, COLORS.hp, RIGHT_PANEL_WIDTH - PANEL_PADDING * 2);
+
+    // MP bar
+    const mp = minion.getCurrentMp();
+    const maxMp = minion.getMaxMp();
+    y = this.renderMiniStatBar(leftX, y, 'MP', mp, maxMp, COLORS.mp, RIGHT_PANEL_WIDTH - PANEL_PADDING * 2);
+
+    // XP bar
+    const level = minion.getLevel();
+    const xp = minion.getXp();
+    const xpToNext = minion.getXpToNextLevel();
+    y = this.renderMiniXpBar(leftX, y, level, xp, xpToNext, RIGHT_PANEL_WIDTH - PANEL_PADDING * 2);
+
+    y += 4;
+    y = this.renderDivider(panelX, RIGHT_PANEL_WIDTH, y);
+
+    // Combat stats
+    y = this.renderStatLine(leftX, y, 'Strength', Math.floor(stats.strength ?? 1), COLORS.strength);
+    y = this.renderStatLine(leftX, y, 'Magic', Math.floor(stats.magic ?? 1), COLORS.magic);
+    y = this.renderStatLine(leftX, y, 'Dexterity', Math.floor(stats.dexterity ?? 1), COLORS.dexterity);
+    y = this.renderStatLine(leftX, y, 'Resilience', Math.floor(stats.resilience ?? 1), COLORS.resilience);
+
+    y += 4;
+    y = this.renderDivider(panelX, RIGHT_PANEL_WIDTH, y);
+
+    // Attack stats
+    const attack = minion.getEffectiveAttack();
+    y = this.renderStatLine(leftX, y, 'Damage', attack.damage, COLORS.strength);
+    y = this.renderStatLine(leftX, y, 'Range', attack.range ?? 0, COLORS.text);
+    y = this.renderStatLine(leftX, y, 'Type', attack.effectType ?? 'melee', COLORS.text, true);
+
+    return y;
+  }
+
+  /** Fallback to get stats from minion if getEffectiveStats isn't available */
+  private getStatsFromMinion(minion: Minion): Record<string, number> {
+    return {
+      maxHp: minion.getMaxHp(),
+      maxMp: minion.getMaxMp(),
+      strength: minion.getStat('strength'),
+      magic: minion.getStat('magic'),
+      dexterity: minion.getStat('dexterity'),
+      resilience: 1,
+    };
+  }
+
+  /** Render a compact stat bar for the right panel */
+  private renderMiniStatBar(x: number, y: number, label: string, current: number, max: number, color: string, maxWidth: number): number {
+    const barWidth = maxWidth - 50;
+    const barHeight = 8;
 
     // Label
-    const labelText = this.scene.add.text(x, y, `${label}:`, {
+    const labelText = this.scene.add.text(x, y, `${label}`, {
       fontFamily: 'Arial',
-      fontSize: '10px',
-      color: COLORS.text,
+      fontSize: '9px',
+      color: COLORS.statLabel,
     });
     this.container.add(labelText);
     this.dynamicElements.push(labelText);
 
     // Bar background
-    const barX = x + 30;
+    const barX = x + 25;
     const barBg = this.scene.add.graphics();
     barBg.fillStyle(0x333333, 1);
     barBg.fillRect(barX, y, barWidth, barHeight);
@@ -245,9 +356,9 @@ export class UpgradeMenu {
     this.dynamicElements.push(barFill);
 
     // Value text
-    const valueText = this.scene.add.text(barX + barWidth + 8, y, `${current}/${max}`, {
+    const valueText = this.scene.add.text(barX + barWidth + 4, y - 1, `${current}/${max}`, {
       fontFamily: 'Arial',
-      fontSize: '10px',
+      fontSize: '8px',
       color: color,
     });
     this.container.add(valueText);
@@ -256,29 +367,29 @@ export class UpgradeMenu {
     return y + barHeight + 6;
   }
 
-  /** Render XP progress bar with level indicator */
-  private renderXpBar(x: number, y: number, level: number, xp: number, xpToNext: number): number {
-    const barWidth = 120;
-    const barHeight = 10;
+  /** Render a compact XP bar */
+  private renderMiniXpBar(x: number, y: number, level: number, xp: number, xpToNext: number, maxWidth: number): number {
+    const barWidth = maxWidth - 50;
+    const barHeight = 8;
 
     // Label with level
-    const labelText = this.scene.add.text(x, y, `Lv${level}:`, {
+    const labelText = this.scene.add.text(x, y, `Lv${level}`, {
       fontFamily: 'Arial',
-      fontSize: '10px',
-      color: COLORS.text,
+      fontSize: '9px',
+      color: COLORS.statLabel,
     });
     this.container.add(labelText);
     this.dynamicElements.push(labelText);
 
     // Bar background
-    const barX = x + 30;
+    const barX = x + 25;
     const barBg = this.scene.add.graphics();
     barBg.fillStyle(0x333333, 1);
     barBg.fillRect(barX, y, barWidth, barHeight);
     this.container.add(barBg);
     this.dynamicElements.push(barBg);
 
-    // Bar fill (XP progress)
+    // Bar fill
     const fillWidth = Math.max(0, (xp / xpToNext) * barWidth);
     const barFill = this.scene.add.graphics();
     barFill.fillStyle(parseInt(COLORS.xp.replace('#', ''), 16), 1);
@@ -287,9 +398,9 @@ export class UpgradeMenu {
     this.dynamicElements.push(barFill);
 
     // Value text
-    const valueText = this.scene.add.text(barX + barWidth + 8, y, `${xp}/${xpToNext}`, {
+    const valueText = this.scene.add.text(barX + barWidth + 4, y - 1, `${xp}/${xpToNext}`, {
       fontFamily: 'Arial',
-      fontSize: '10px',
+      fontSize: '8px',
       color: COLORS.xp,
     });
     this.container.add(valueText);
@@ -298,20 +409,44 @@ export class UpgradeMenu {
     return y + barHeight + 6;
   }
 
-  /** Render divider line */
-  private renderDivider(y: number): number {
+  /** Render a single stat line */
+  private renderStatLine(x: number, y: number, label: string, value: number | string, color: string, isString = false): number {
+    const labelText = this.scene.add.text(x, y, label, {
+      fontFamily: 'Arial',
+      fontSize: '10px',
+      color: COLORS.statLabel,
+    });
+    this.container.add(labelText);
+    this.dynamicElements.push(labelText);
+
+    const valueStr = isString ? String(value) : String(value);
+    const valueText = this.scene.add.text(x + RIGHT_PANEL_WIDTH - PANEL_PADDING * 2, y, valueStr, {
+      fontFamily: 'Arial',
+      fontSize: '10px',
+      color: color,
+      fontStyle: 'bold',
+    });
+    valueText.setOrigin(1, 0);
+    this.container.add(valueText);
+    this.dynamicElements.push(valueText);
+
+    return y + 16;
+  }
+
+  /** Render divider line for a specific panel */
+  private renderDivider(panelX: number, panelWidth: number, y: number): number {
     const divider = this.scene.add.graphics();
     divider.lineStyle(1, COLORS.sectionBorder, 0.5);
-    divider.lineBetween(-PANEL_WIDTH / 2 + PANEL_PADDING, y, PANEL_WIDTH / 2 - PANEL_PADDING, y);
+    divider.lineBetween(panelX + PANEL_PADDING, y, panelX + panelWidth - PANEL_PADDING, y);
     this.container.add(divider);
     this.dynamicElements.push(divider);
     return y + 8;
   }
 
   /** Render equipped gems section */
-  private renderEquippedSection(minion: Minion, startY: number): number {
+  private renderEquippedSection(minion: Minion, panelX: number, startY: number): number {
     let y = startY;
-    const leftX = -PANEL_WIDTH / 2 + PANEL_PADDING;
+    const leftX = panelX + PANEL_PADDING;
     const equippedGems = minion.getAbilitySystem().getEquippedGems();
 
     // Section header
@@ -336,16 +471,16 @@ export class UpgradeMenu {
       y += 20;
     } else {
       for (let slot = 0; slot < equippedGems.length; slot++) {
-        y = this.renderEquippedGemRow(minion, equippedGems[slot], slot, leftX, y);
+        y = this.renderEquippedGemRow(minion, equippedGems[slot], slot, panelX, leftX, y);
       }
     }
 
-    y = this.renderDivider(y + 4);
+    y = this.renderDivider(panelX, LEFT_PANEL_WIDTH, y + 4);
     return y;
   }
 
   /** Render a single equipped gem row */
-  private renderEquippedGemRow(minion: Minion, gem: AbilityGem, slot: number, x: number, y: number): number {
+  private renderEquippedGemRow(minion: Minion, gem: AbilityGem, slot: number, panelX: number, x: number, y: number): number {
     const entry = GemRegistry.get(gem.id);
     if (!entry) return y + ROW_HEIGHT;
 
@@ -378,7 +513,7 @@ export class UpgradeMenu {
     this.dynamicElements.push(descText);
 
     // Remove button
-    const removeBtn = this.scene.add.text(PANEL_WIDTH / 2 - PANEL_PADDING - 50, y + 10, '[Remove]', {
+    const removeBtn = this.scene.add.text(panelX + LEFT_PANEL_WIDTH - PANEL_PADDING - 50, y + 10, '[Remove]', {
       fontFamily: 'Arial',
       fontSize: '9px',
       color: COLORS.remove,
@@ -388,7 +523,8 @@ export class UpgradeMenu {
     removeBtn.on('pointerout', () => removeBtn.setColor(COLORS.remove));
     removeBtn.on('pointerdown', () => {
       this.onGemRemoved?.(minion, slot, gem.id);
-      this.close();
+      // Refresh instead of close
+      this.refreshMenu(minion);
     });
     this.container.add(removeBtn);
     this.dynamicElements.push(removeBtn);
@@ -397,12 +533,12 @@ export class UpgradeMenu {
   }
 
   /** Render inventory gems section with pagination */
-  private renderInventorySection(minion: Minion, startY: number): number {
+  private renderInventorySection(minion: Minion, panelX: number, startY: number): number {
     if (!this.inventory) return startY;
 
     let y = startY;
-    const leftX = -PANEL_WIDTH / 2 + PANEL_PADDING;
-    const rightX = PANEL_WIDTH / 2 - PANEL_PADDING;
+    const leftX = panelX + PANEL_PADDING;
+    const rightX = panelX + LEFT_PANEL_WIDTH - PANEL_PADDING;
 
     const equippedIds = new Set(minion.getAbilitySystem().getEquippedGems().map(g => g.id));
     const availableGems = this.inventory.getGems().filter(g => !equippedIds.has(g.gemId));
@@ -443,11 +579,11 @@ export class UpgradeMenu {
       // Show gems for current page
       const gemsToShow = availableGems.slice(startIndex, endIndex);
       for (const inventoryGem of gemsToShow) {
-        y = this.renderInventoryGemRow(minion, inventoryGem, leftX, y);
+        y = this.renderInventoryGemRow(minion, inventoryGem, panelX, leftX, y);
       }
     }
 
-    y = this.renderDivider(y + 4);
+    y = this.renderDivider(panelX, LEFT_PANEL_WIDTH, y + 4);
     return y;
   }
 
@@ -510,29 +646,11 @@ export class UpgradeMenu {
 
   /** Refresh the menu content without closing it */
   private refreshMenu(minion: Minion): void {
-    this.clearDynamicElements();
-
-    let currentY = 0;
-    currentY = this.renderHeader(minion, currentY);
-    currentY = this.renderEquippedSection(minion, currentY);
-    currentY = this.renderInventorySection(minion, currentY);
-    currentY = this.renderFooter(minion, currentY);
-
-    const totalHeight = currentY + PANEL_PADDING;
-    this.drawBackground(totalHeight);
-
-    const offsetY = -totalHeight / 2;
-    this.dynamicElements.forEach(el => {
-      if ('y' in el) {
-        (el as unknown as { y: number }).y += offsetY;
-      }
-    });
-
-    this.updatePosition(totalHeight);
+    this.renderFullMenu(minion);
   }
 
   /** Render a single inventory gem row */
-  private renderInventoryGemRow(_minion: Minion, inventoryGem: InventoryGem, x: number, y: number): number {
+  private renderInventoryGemRow(_minion: Minion, inventoryGem: InventoryGem, panelX: number, x: number, y: number): number {
     const entry = GemRegistry.get(inventoryGem.gemId);
     if (!entry) return y + ROW_HEIGHT;
 
@@ -586,7 +704,7 @@ export class UpgradeMenu {
 
     // Equip button
     const btnColor = canAfford ? COLORS.button : COLORS.buttonDisabled;
-    const equipBtn = this.scene.add.text(PANEL_WIDTH / 2 - PANEL_PADDING - 40, y + 10, '[Equip]', {
+    const equipBtn = this.scene.add.text(panelX + LEFT_PANEL_WIDTH - PANEL_PADDING - 40, y + 10, '[Equip]', {
       fontFamily: 'Arial',
       fontSize: '9px',
       color: btnColor,
@@ -600,6 +718,10 @@ export class UpgradeMenu {
         const gem = entry.createGem();
         this.onInventoryGemEquipped?.(inventoryGem);
         this.onGemSelected(gem, entry);
+        // Refresh instead of relying on external close
+        if (this.targetMinion) {
+          this.refreshMenu(this.targetMinion);
+        }
       });
     }
 
@@ -610,8 +732,9 @@ export class UpgradeMenu {
   }
 
   /** Render footer with repair button */
-  private renderFooter(minion: Minion, startY: number): number {
+  private renderFooter(minion: Minion, panelX: number, startY: number): number {
     let y = startY;
+    const centerX = panelX + LEFT_PANEL_WIDTH / 2;
     const isDamaged = minion.getCurrentHp() < minion.getMaxHp();
 
     // Repair button (if damaged)
@@ -619,7 +742,7 @@ export class UpgradeMenu {
       const canAfford = this.currencyDisplay.canAfford(this.repairCost);
       const btnColor = canAfford ? COLORS.button : COLORS.buttonDisabled;
 
-      const repairBtn = this.scene.add.text(0, y, `[Repair - ${this.repairCost} Essence]`, {
+      const repairBtn = this.scene.add.text(centerX, y, `[Repair - ${this.repairCost} Essence]`, {
         fontFamily: 'Arial',
         fontSize: '11px',
         color: btnColor,
@@ -633,7 +756,8 @@ export class UpgradeMenu {
         repairBtn.on('pointerout', () => repairBtn.setColor(COLORS.button));
         repairBtn.on('pointerdown', () => {
           if (this.onRepair?.(minion)) {
-            this.close();
+            // Refresh instead of close to show updated HP
+            this.refreshMenu(minion);
           }
         });
       }
@@ -644,7 +768,7 @@ export class UpgradeMenu {
     }
 
     // Close hint
-    const hint = this.scene.add.text(0, y, 'ESC to close', {
+    const hint = this.scene.add.text(centerX, y, 'ESC to close', {
       fontFamily: 'Arial',
       fontSize: '9px',
       color: COLORS.hint,
@@ -691,29 +815,15 @@ export class UpgradeMenu {
   }
 
   public update(): void {
-    // Menu doesn't follow minion anymore - it's positioned once on open
+    // Menu doesn't follow minion anymore - it's centered on screen
   }
 
-  private updatePosition(panelHeight: number): void {
-    if (!this.targetMinion) return;
-
+  /** Center the menu on the screen */
+  private centerOnScreen(): void {
     const camera = this.scene.cameras.main;
-    let targetX = this.targetMinion.x;
-    let targetY = this.targetMinion.y + PANEL_OFFSET_Y;
-
-    const halfWidth = PANEL_WIDTH / 2;
-    const halfHeight = panelHeight / 2;
-    const padding = 10;
-
-    const minX = camera.scrollX + padding + halfWidth;
-    const maxX = camera.scrollX + camera.width - padding - halfWidth;
-    const minY = camera.scrollY + padding + halfHeight;
-    const maxY = camera.scrollY + camera.height - padding - halfHeight;
-
-    targetX = Phaser.Math.Clamp(targetX, minX, maxX);
-    targetY = Phaser.Math.Clamp(targetY, minY, maxY);
-
-    this.container.setPosition(targetX, targetY);
+    const centerX = camera.scrollX + camera.width / 2;
+    const centerY = camera.scrollY + camera.height / 2;
+    this.container.setPosition(centerX, centerY);
   }
 
   private clearDynamicElements(): void {
