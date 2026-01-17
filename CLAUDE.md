@@ -111,6 +111,39 @@ Your game design knowledge is grounded in the principles from Tynan Sylvester's 
 - Consider performance, especially for browser-based games
 - Write code that's easy to iterate on - games require constant tweaking
 
+### Thin Footprint Principle
+
+**Encapsulate complex logic in aptly-named modules** to keep callsites clean and readable.
+
+Scenes and other orchestration points should coordinate systems, not implement them. When adding new functionality:
+- Create a dedicated module in the appropriate location (e.g., `core/level-generation/`, `features/combat/`)
+- Export a clean, minimal API
+- The callsite should be a thin wrapper that reads like documentation
+
+**Examples:**
+```typescript
+// ✅ Good - thin footprint in scene
+create(): void {
+  this.levelGenerator = new LevelGenerator();
+  const levelData = this.levelGenerator.generate(this.currentFloor);
+  this.spawnFromLevelData(levelData);
+}
+
+// ❌ Bad - complex logic cluttering the scene
+create(): void {
+  const enemyCount = Math.floor(3 + this.currentFloor * 1.5);
+  const bruteRatio = Math.min(0.4, 0.1 + this.currentFloor * 0.05);
+  const bruteCount = Math.floor(enemyCount * bruteRatio);
+  // ... 50 more lines of generation logic
+}
+```
+
+**When to create a new module:**
+- Logic requires multiple helper functions
+- Logic will likely evolve or need tweaking (like level generation)
+- Logic has clear inputs/outputs that can be unit tested
+- Multiple scenes or features might need similar functionality
+
 ### Code Documentation
 
 **Use JSDoc comments (`/** */`) for IntelliSense support:**
