@@ -48,8 +48,8 @@ export function lifestealEffect(
   const { triggerDamage } = ctx;
   if (!triggerDamage || triggerDamage <= 0) return;
 
-  const healAmount = Math.floor(triggerDamage * params.ratio);
-  if (healAmount <= 0) return;
+  // Always heal at least 1 if any damage was dealt
+  const healAmount = Math.max(1, Math.floor(triggerDamage * params.ratio));
 
   healEffect(ctx, targets, { power: healAmount });
 }

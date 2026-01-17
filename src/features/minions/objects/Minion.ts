@@ -75,7 +75,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
   private aggroRadius: number;
 
   // Callbacks
-  private onDeathCallback?: () => void;
+  private onDeathCallback?: (droppedGemIds: string[]) => void;
 
   // Ability system
   private abilitySystem: AbilitySystem;
@@ -94,7 +94,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
       xpCurve: defaultXpCurve,
     });
 
-    this.abilitySystem = new AbilitySystem(this, { maxSlots: 1 });
+    this.abilitySystem = new AbilitySystem(this, { maxSlots: 3 });
 
     const stats = this.getEffectiveStats();
     this.hp = stats.maxHp;
@@ -207,11 +207,12 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
     this.selectionCircle.strokeCircle(0, 0, MINION_VISUAL_RADIUS);
     this.selectionCircle.setVisible(false);
 
-    // Stat bars
+    // Stat bars (XP hidden - shown only in upgrade menu)
     this.statBars = new UnitStatBars(scene, {
       width: STAT_BAR_WIDTH,
       offsetY: STAT_BAR_OFFSET_Y,
       barHeight: 4,
+      showXp: false,
     });
 
     // Gem slot display (shows equipped gems below minion)
@@ -434,6 +435,20 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
     return this.abilitySystem;
   }
 
+  /** Get IDs of all equipped gems (for dropping on death) */
+  public getEquippedGemIds(): string[] {
+    return this.abilitySystem.getEquippedGems().map(gem => gem.id);
+  }
+
+  /** Remove a gem from a slot (destroys the gem). Returns true if a gem was removed. */
+  public removeGem(slot: number): boolean {
+    const removed = this.abilitySystem.unequipGem(slot);
+    if (removed) {
+      this.updateStatBars();
+    }
+    return removed !== null;
+  }
+
   public addXp(amount: number): void {
     this.leveling.addXp(amount);
   }
@@ -442,7 +457,15 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
     return this.leveling.getLevel();
   }
 
-  public onDeath(callback: () => void): void {
+  public getXp(): number {
+    return this.leveling.getXp();
+  }
+
+  public getXpToNextLevel(): number {
+    return this.leveling.getXpToNextLevel();
+  }
+
+  public onDeath(callback: (droppedGemIds: string[]) => void): void {
     this.onDeathCallback = callback;
   }
 
@@ -591,6 +614,9 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
     this.actor.stop();
     this.deselect();
 
+    // Collect gem IDs before destruction
+    const droppedGemIds = this.getEquippedGemIds();
+
     this.scene.tweens.add({
       targets: this,
       alpha: 0,
@@ -598,7 +624,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
       duration: 200,
       onComplete: () => {
         if (this.onDeathCallback) {
-          this.onDeathCallback();
+          this.onDeathCallback(droppedGemIds);
         }
         this.destroy();
       }

@@ -5,10 +5,11 @@ import { Enemy, EnemyTypeConfig } from '../../enemies';
 import { CombatManager, CombatXpTracker, GameEventManager, EdgeScrollCamera, WhistleSelection, SelectionManager } from '../../../core/components';
 import { CurrencyDisplay } from '../ui/CurrencyDisplay';
 import { FloorDisplay } from '../ui/FloorDisplay';
-import { UpgradeMenu } from '../../upgrade';
+import { PartyDisplay } from '../ui/PartyDisplay';
+import { UpgradeMenu, GemRegistry } from '../../upgrade';
 import { AbilityGem } from '../../../core/abilities/types';
 import { WorldGem, GemDropper, InventoryState, getGemVisual, InventoryModal, GemEquipmentSystem } from '../../inventory';
-import { GameState } from '../../../core/game-state';
+import { GameState, PartyManager } from '../../../core/game-state';
 import { LevelGenerator, LevelData } from '../../../core/level-generation';
 import { FloorTransition, DefeatTransition } from '../../../core/floor-transition';
 import { Vfx } from '../../../core/vfx';
@@ -32,7 +33,9 @@ export class LevelScene extends Phaser.Scene {
   // Currency
   private currencyDisplay!: CurrencyDisplay;
   private floorDisplay!: FloorDisplay;
-  private readonly MINION_COST = 10;
+  private partyDisplay!: PartyDisplay;
+  private readonly MINION_COST = 50;
+  private readonly REPAIR_COST = 10;
   private readonly TREASURE_VALUE = 5;
 
   // Loot
@@ -56,6 +59,7 @@ export class LevelScene extends Phaser.Scene {
 
   // Roguelike state
   private gameState = new GameState();
+  private partyManager = new PartyManager(3);
   private levelGenerator = new LevelGenerator();
   private isTransitioning = false;
 
@@ -145,6 +149,9 @@ export class LevelScene extends Phaser.Scene {
     this.floorDisplay = new FloorDisplay(this, 10, 50);
     this.floorDisplay.setFloor(this.gameState.getFloor());
 
+    // Party display
+    this.partyDisplay = new PartyDisplay(this, this.partyManager, 10, 75);
+
     // Essence dropper for enemy loot
     this.essenceDropper = new EssenceDropper(this);
 
@@ -176,6 +183,9 @@ export class LevelScene extends Phaser.Scene {
 
     // Update upgrade menu (follows minion position)
     this.upgradeMenu?.update();
+
+    // Update party display
+    this.partyDisplay.update();
 
     // Get active entities
     const activeMinions = this.minions.filter(m => !m.isDefeated());
@@ -314,6 +324,15 @@ export class LevelScene extends Phaser.Scene {
     eKey?.on('down', () => {
       const pointer = this.input.activePointer;
 
+      // Check party limit first
+      if (!this.partyManager.canAddMinion()) {
+        this.vfx.text.show(pointer.worldX, pointer.worldY, 'Party Full!', {
+          color: '#ff6666',
+          bold: true,
+        });
+        return;
+      }
+
       if (this.currencyDisplay.spend(this.MINION_COST)) {
         this.spawnMinion(pointer.worldX, pointer.worldY);
       }
@@ -339,6 +358,17 @@ export class LevelScene extends Phaser.Scene {
         // Remove the gem from inventory when equipped
         this.inventory.removeGem(inventoryGem.instanceId);
       },
+      onGemRemoved: (minion, slot, gemId) => {
+        // Remove the gem (destroys it)
+        minion.removeGem(slot);
+        const entry = GemRegistry.get(gemId);
+        this.vfx.text.show(minion.x, minion.y - 40, `${entry?.name ?? 'Gem'} destroyed`, {
+          color: '#ff6666',
+          bold: true,
+        });
+      },
+      onRepair: (minion) => this.repairMinion(minion),
+      repairCost: this.REPAIR_COST,
       onCancel: () => this.upgradeMenu?.close(),
     });
 
@@ -357,6 +387,22 @@ export class LevelScene extends Phaser.Scene {
         // Show equip effect (target is a Minion)
         this.showGemEquipEffect(target as Minion);
         this.inventoryModal?.close();
+      },
+      canAffordEquip: (gemId) => {
+        const cost = this.getGemEquipCost(gemId);
+        return this.currencyDisplay.canAfford(cost);
+      },
+      spendEquipCost: (gemId) => {
+        const cost = this.getGemEquipCost(gemId);
+        this.currencyDisplay.spend(cost);
+      },
+      onCannotAfford: (gemId) => {
+        const cost = this.getGemEquipCost(gemId);
+        const pointer = this.input.activePointer;
+        this.vfx.text.show(pointer.worldX, pointer.worldY, `Need ${cost} essence!`, {
+          color: '#ff6666',
+          bold: true,
+        });
       },
     });
 
@@ -505,22 +551,34 @@ export class LevelScene extends Phaser.Scene {
       xpTracker: this.xpTracker,
     });
     this.minions.push(minion);
+    this.partyManager.addMinion();
 
-    // Make minion clickable for gem equipping
+    // Make minion clickable for selection and gem equipping
     minion.setInteractive({ useHandCursor: true });
-    minion.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (pointer.leftButtonDown() && this.gemEquipment.isAwaitingTarget()) {
-        this.gemEquipment.tryEquipOn(minion);
+    minion.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
+      if (pointer.leftButtonDown()) {
+        // Gem equipping takes priority if awaiting target
+        if (this.gemEquipment.isAwaitingTarget()) {
+          this.gemEquipment.tryEquipOn(minion);
+        } else {
+          // StarCraft-style: click to select only this minion
+          this.selectionManager.select(minion);
+        }
+        event.stopPropagation(); // Prevent background deselect
       }
     });
 
     // Handle death
-    minion.onDeath(() => {
+    minion.onDeath((droppedGemIds) => {
       const index = this.minions.indexOf(minion);
       if (index > -1) {
         this.minions.splice(index, 1);
       }
+      this.partyManager.removeMinion();
       this.selectionManager.removeFromSelection(minion);
+
+      // Drop equipped gems at minion's death location
+      this.dropGemsAtLocation(minion.x, minion.y, droppedGemIds);
 
       // Close upgrade menu if this minion dies while menu is open for them
       if (this.upgradeMenu?.isOpen() && this.upgradeMenu.getTargetMinion() === minion) {
@@ -639,5 +697,48 @@ export class LevelScene extends Phaser.Scene {
 
   public getEventManager(): GameEventManager | undefined {
     return this.eventManager;
+  }
+
+  /** Get the essence cost to equip a gem */
+  private getGemEquipCost(gemId: string): number {
+    return GemRegistry.get(gemId)?.essenceCost ?? 0;
+  }
+
+  /** Repair a minion to full HP */
+  private repairMinion(minion: Minion): boolean {
+    if (!this.currencyDisplay.canAfford(this.REPAIR_COST)) {
+      return false;
+    }
+
+    if (minion.getCurrentHp() >= minion.getMaxHp()) {
+      return false;
+    }
+
+    this.currencyDisplay.spend(this.REPAIR_COST);
+    minion.heal(minion.getMaxHp());
+
+    this.vfx.text.show(minion.x, minion.y - 40, 'Repaired!', {
+      color: '#44ff44',
+      bold: true,
+    });
+
+    return true;
+  }
+
+  /** Drop gems at a location (used when minion dies) */
+  private dropGemsAtLocation(x: number, y: number, gemIds: string[]): void {
+    for (const gemId of gemIds) {
+      this.gemDropper.drop(x, y, gemId, (worldGem) => {
+        this.gemCollection.add(worldGem);
+      });
+    }
+
+    // Show feedback if gems were dropped
+    if (gemIds.length > 0) {
+      this.vfx.text.show(x, y - 30, 'Gems dropped!', {
+        color: '#ffcc00',
+        bold: true,
+      });
+    }
   }
 }

@@ -4,21 +4,30 @@ import { AbilityGem } from '../../../core/abilities/types';
 import { Minion } from '../../minions';
 import { CurrencyDisplay } from '../../level/ui/CurrencyDisplay';
 import { GemRegistry, GemRegistryEntry } from '../data/GemRegistry';
-import { GemCard } from './GemCard';
-import { InventoryState, InventoryGem } from '../../inventory';
+import { InventoryState, InventoryGem, getGemVisual } from '../../inventory';
 
-const PANEL_WIDTH = 420;
-const PANEL_HEIGHT = 200;
-const PANEL_PADDING = 12;
-const CARD_SPACING = 16;
+// Larger panel for tabular layout
+const PANEL_WIDTH = 340;
+const PANEL_PADDING = 16;
+const ROW_HEIGHT = 48;
 const CORNER_RADIUS = 8;
-const PANEL_OFFSET_Y = -120;
+const PANEL_OFFSET_Y = -180;
 
 const COLORS = {
   background: 0x1a1a2e,
   border: 0x4a4a6a,
+  sectionBorder: 0x3a3a5a,
   title: '#ffffff',
-  hint: '#888888',
+  subtitle: '#aaaaaa',
+  hint: '#666666',
+  text: '#cccccc',
+  cost: '#ffd700',
+  hp: '#ff6666',
+  mp: '#6666ff',
+  xp: '#ffd700',
+  button: '#44ff44',
+  buttonDisabled: '#444444',
+  remove: '#ff6666',
 };
 
 export interface UpgradeMenuConfig {
@@ -26,14 +35,16 @@ export interface UpgradeMenuConfig {
   currencyDisplay: CurrencyDisplay;
   onGemSelected: (gem: AbilityGem, entry: GemRegistryEntry) => void;
   onCancel: () => void;
-  /** If provided, shows inventory gems instead of purchasable random gems */
   inventory?: InventoryState;
-  /** Called when equipping an inventory gem (removes from inventory) */
   onInventoryGemEquipped?: (inventoryGem: InventoryGem) => void;
+  onGemRemoved?: (minion: Minion, slot: number, gemId: string) => void;
+  onRepair?: (minion: Minion) => boolean;
+  repairCost?: number;
 }
 
 /**
- * Floating panel that displays two gem choices for upgrading a minion.
+ * Minion management panel with tabular gem layout.
+ * Shows minion stats, equipped gems, inventory gems, and repair option.
  */
 export class UpgradeMenu {
   private scene: Phaser.Scene;
@@ -42,20 +53,17 @@ export class UpgradeMenu {
   private onCancel: () => void;
   private inventory?: InventoryState;
   private onInventoryGemEquipped?: (inventoryGem: InventoryGem) => void;
+  private onGemRemoved?: (minion: Minion, slot: number, gemId: string) => void;
+  private onRepair?: (minion: Minion) => boolean;
+  private repairCost: number;
 
   private container: Phaser.GameObjects.Container;
   private background: Phaser.GameObjects.Graphics;
-  private titleText: Phaser.GameObjects.Text;
-  private hintText: Phaser.GameObjects.Text;
-  private gemCards: GemCard[] = [];
-  private currentOffers: GemRegistryEntry[] = [];
-  /** In inventory mode, tracks which inventory gems are being shown */
-  private currentInventoryGems: InventoryGem[] = [];
+  private dynamicElements: Phaser.GameObjects.GameObject[] = [];
 
   private targetMinion: Minion | null = null;
   private escKey?: Phaser.Input.Keyboard.Key;
   private clickOutsideHandler?: (pointer: Phaser.Input.Pointer) => void;
-
   private isMenuOpen = false;
 
   constructor(config: UpgradeMenuConfig) {
@@ -65,40 +73,17 @@ export class UpgradeMenu {
     this.onCancel = config.onCancel;
     this.inventory = config.inventory;
     this.onInventoryGemEquipped = config.onInventoryGemEquipped;
+    this.onGemRemoved = config.onGemRemoved;
+    this.onRepair = config.onRepair;
+    this.repairCost = config.repairCost ?? 10;
 
-    // Create container (hidden initially)
     this.container = this.scene.add.container(0, 0);
     this.container.setDepth(LAYERS.UI_OVERLAY);
     this.container.setVisible(false);
 
-    // Background panel
     this.background = this.scene.add.graphics();
     this.container.add(this.background);
 
-    // Title (changes based on mode)
-    const titleStr = this.inventory ? 'EQUIP GEM' : 'UPGRADE MINION';
-    this.titleText = this.scene.add.text(0, -PANEL_HEIGHT / 2 + PANEL_PADDING + 8, titleStr, {
-      fontFamily: 'Arial',
-      fontSize: '14px',
-      color: COLORS.title,
-      fontStyle: 'bold',
-    });
-    this.titleText.setOrigin(0.5, 0);
-    this.container.add(this.titleText);
-
-    // Cancel hint
-    this.hintText = this.scene.add.text(0, PANEL_HEIGHT / 2 - PANEL_PADDING - 8, 'ESC or click outside to cancel', {
-      fontFamily: 'Arial',
-      fontSize: '10px',
-      color: COLORS.hint,
-    });
-    this.hintText.setOrigin(0.5, 1);
-    this.container.add(this.hintText);
-
-    // Draw background
-    this.drawBackground();
-
-    // Setup ESC key
     this.escKey = this.scene.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
     this.escKey?.on('down', () => {
       if (this.isMenuOpen) {
@@ -108,26 +93,24 @@ export class UpgradeMenu {
     });
   }
 
-  private drawBackground(): void {
+  private drawBackground(height: number): void {
     this.background.clear();
 
-    // Background fill
     this.background.fillStyle(COLORS.background, 0.95);
     this.background.fillRoundedRect(
       -PANEL_WIDTH / 2,
-      -PANEL_HEIGHT / 2,
+      -height / 2,
       PANEL_WIDTH,
-      PANEL_HEIGHT,
+      height,
       CORNER_RADIUS
     );
 
-    // Border
     this.background.lineStyle(2, COLORS.border, 1);
     this.background.strokeRoundedRect(
       -PANEL_WIDTH / 2,
-      -PANEL_HEIGHT / 2,
+      -height / 2,
       PANEL_WIDTH,
-      PANEL_HEIGHT,
+      height,
       CORNER_RADIUS
     );
   }
@@ -137,24 +120,30 @@ export class UpgradeMenu {
 
     this.targetMinion = minion;
     this.isMenuOpen = true;
+    this.clearDynamicElements();
 
-    // Clear old cards
-    this.clearGemCards();
-    this.currentOffers = [];
-    this.currentInventoryGems = [];
+    // Build the UI
+    let currentY = 0;
+    currentY = this.renderHeader(minion, currentY);
+    currentY = this.renderEquippedSection(minion, currentY);
+    currentY = this.renderInventorySection(minion, currentY);
+    currentY = this.renderFooter(minion, currentY);
 
-    // Branch based on inventory mode vs purchase mode
-    console.log('UpgradeMenu.open - inventory mode:', !!this.inventory, 'inventory count:', this.inventory?.getCount());
-    if (this.inventory) {
-      this.openInventoryMode(minion);
-    } else {
-      this.openPurchaseMode(minion);
-    }
+    // Calculate actual height needed and draw background
+    const totalHeight = currentY + PANEL_PADDING;
+    this.drawBackground(totalHeight);
 
-    // Position menu near minion
-    this.updatePosition();
+    // Reposition all elements relative to centered panel
+    const offsetY = -totalHeight / 2;
+    this.dynamicElements.forEach(el => {
+      if ('y' in el) {
+        (el as unknown as { y: number }).y += offsetY;
+      }
+    });
 
-    // Show with fade in
+    this.updatePosition(totalHeight);
+
+    // Fade in
     this.container.setAlpha(0);
     this.container.setVisible(true);
     this.scene.tweens.add({
@@ -164,135 +153,410 @@ export class UpgradeMenu {
       ease: 'Power2',
     });
 
-    // Setup click outside handler (delayed to avoid immediate trigger)
+    // Click outside handler
     this.scene.time.delayedCall(100, () => {
       this.clickOutsideHandler = (pointer: Phaser.Input.Pointer) => {
         if (!this.isMenuOpen) return;
-
-        // Check if click is outside menu bounds
         const localX = pointer.worldX - this.container.x;
         const localY = pointer.worldY - this.container.y;
-
-        if (
-          localX < -PANEL_WIDTH / 2 ||
-          localX > PANEL_WIDTH / 2 ||
-          localY < -PANEL_HEIGHT / 2 ||
-          localY > PANEL_HEIGHT / 2
-        ) {
+        const halfH = totalHeight / 2;
+        if (localX < -PANEL_WIDTH / 2 || localX > PANEL_WIDTH / 2 ||
+            localY < -halfH || localY > halfH) {
           this.close();
           this.onCancel();
         }
       };
-
       this.scene.input.on('pointerdown', this.clickOutsideHandler);
     });
   }
 
-  /** Open in inventory mode - shows gems from player's inventory */
-  private openInventoryMode(minion: Minion): void {
-    if (!this.inventory) return;
+  /** Render header with minion stats */
+  private renderHeader(minion: Minion, startY: number): number {
+    let y = startY + PANEL_PADDING;
+    const leftX = -PANEL_WIDTH / 2 + PANEL_PADDING;
 
-    // Get gems from inventory, excluding types already equipped
-    const equippedGems = minion.getAbilitySystem().getEquippedGems();
-    const equippedIds = new Set(equippedGems.map(g => g.id));
-
-    // Filter inventory to show gems not already equipped on this minion
-    const allGems = this.inventory.getGems();
-    const availableGems = allGems.filter(g => !equippedIds.has(g.gemId));
-    console.log('openInventoryMode - all gems:', allGems.length, 'available (not equipped):', availableGems.length);
-
-    // Show up to 3 gems (fits in wider panel)
-    this.currentInventoryGems = availableGems.slice(0, 3);
-
-    if (this.currentInventoryGems.length === 0) {
-      // Show empty state
-      this.showEmptyInventoryMessage();
-      return;
-    }
-
-    // Create gem cards for inventory gems
-    const cardY = 15;
-    const totalCardWidth = this.currentInventoryGems.length * 120 + (this.currentInventoryGems.length - 1) * CARD_SPACING;
-    const startX = -totalCardWidth / 2 + 60;
-
-    for (let index = 0; index < this.currentInventoryGems.length; index++) {
-      const inventoryGem = this.currentInventoryGems[index];
-      const entry = GemRegistry.get(inventoryGem.gemId);
-      if (!entry) continue;
-
-      const cardX = startX + index * (120 + CARD_SPACING);
-
-      const card = new GemCard(this.scene, cardX, cardY, {
-        entry,
-        canAfford: true, // Always affordable in inventory mode
-        hideCost: true,  // Don't show cost in inventory mode
-        onClick: () => this.selectInventoryGem(inventoryGem, entry),
-      });
-
-      const cardContainer = card.getContainer();
-      this.container.add(cardContainer);
-      this.gemCards.push(card);
-    }
-  }
-
-  /** Open in purchase mode - shows random gems for purchase */
-  private openPurchaseMode(minion: Minion): void {
-    // Get current equipped gem to exclude from offers
-    const equippedGems = minion.getAbilitySystem().getEquippedGems();
-    const excludeIds = equippedGems.map(g => g.id);
-
-    // Generate random gem offers
-    this.currentOffers = GemRegistry.getRandomGems(2, excludeIds);
-
-    // If not enough gems available, just take what we can
-    if (this.currentOffers.length === 0) {
-      this.currentOffers = GemRegistry.getRandomGems(2);
-    }
-
-    // Create gem cards
-    const cardY = 15;
-    const totalCardWidth = this.currentOffers.length * 120 + (this.currentOffers.length - 1) * CARD_SPACING;
-    const startX = -totalCardWidth / 2 + 60;
-
-    for (let index = 0; index < this.currentOffers.length; index++) {
-      const entry = this.currentOffers[index];
-      const cardX = startX + index * (120 + CARD_SPACING);
-      const canAfford = this.currencyDisplay.canAfford(entry.essenceCost);
-
-      const card = new GemCard(this.scene, cardX, cardY, {
-        entry,
-        canAfford,
-        onClick: () => this.selectGem(entry),
-      });
-
-      const cardContainer = card.getContainer();
-      this.container.add(cardContainer);
-      this.gemCards.push(card);
-    }
-  }
-
-  private emptyText?: Phaser.GameObjects.Text;
-
-  private showEmptyInventoryMessage(): void {
-    this.emptyText = this.scene.add.text(0, 15, 'No gems in inventory\nDefeat enemies to collect gems!', {
+    // Title
+    const title = this.scene.add.text(0, y, 'MINION', {
       fontFamily: 'Arial',
-      fontSize: '12px',
-      color: '#888888',
-      align: 'center',
+      fontSize: '14px',
+      color: COLORS.title,
+      fontStyle: 'bold',
     });
-    this.emptyText.setOrigin(0.5, 0.5);
-    this.container.add(this.emptyText);
+    title.setOrigin(0.5, 0);
+    this.container.add(title);
+    this.dynamicElements.push(title);
+    y += 22;
+
+    // HP bar
+    const hp = minion.getCurrentHp();
+    const maxHp = minion.getMaxHp();
+    y = this.renderStatBar(leftX, y, 'HP', hp, maxHp, COLORS.hp);
+
+    // MP bar
+    const mp = minion.getCurrentMp();
+    const maxMp = minion.getMaxMp();
+    y = this.renderStatBar(leftX, y, 'MP', mp, maxMp, COLORS.mp);
+
+    // XP progress bar
+    const level = minion.getLevel();
+    const xp = minion.getXp();
+    const xpToNext = minion.getXpToNextLevel();
+    y = this.renderXpBar(leftX, y, level, xp, xpToNext);
+
+    // Divider
+    y = this.renderDivider(y);
+
+    return y;
   }
 
-  /** Called when selecting an inventory gem to equip */
-  private selectInventoryGem(inventoryGem: InventoryGem, entry: GemRegistryEntry): void {
-    const gem = entry.createGem();
+  /** Render a stat bar (HP or MP) */
+  private renderStatBar(x: number, y: number, label: string, current: number, max: number, color: string): number {
+    const barWidth = 120;
+    const barHeight = 10;
 
-    // Notify that we're equipping an inventory gem (so it can be removed from inventory)
-    this.onInventoryGemEquipped?.(inventoryGem);
+    // Label
+    const labelText = this.scene.add.text(x, y, `${label}:`, {
+      fontFamily: 'Arial',
+      fontSize: '10px',
+      color: COLORS.text,
+    });
+    this.container.add(labelText);
+    this.dynamicElements.push(labelText);
 
-    // Also call the standard gem selected callback
-    this.onGemSelected(gem, entry);
+    // Bar background
+    const barX = x + 30;
+    const barBg = this.scene.add.graphics();
+    barBg.fillStyle(0x333333, 1);
+    barBg.fillRect(barX, y, barWidth, barHeight);
+    this.container.add(barBg);
+    this.dynamicElements.push(barBg);
+
+    // Bar fill
+    const fillWidth = Math.max(0, (current / max) * barWidth);
+    const barFill = this.scene.add.graphics();
+    barFill.fillStyle(parseInt(color.replace('#', ''), 16), 1);
+    barFill.fillRect(barX, y, fillWidth, barHeight);
+    this.container.add(barFill);
+    this.dynamicElements.push(barFill);
+
+    // Value text
+    const valueText = this.scene.add.text(barX + barWidth + 8, y, `${current}/${max}`, {
+      fontFamily: 'Arial',
+      fontSize: '10px',
+      color: color,
+    });
+    this.container.add(valueText);
+    this.dynamicElements.push(valueText);
+
+    return y + barHeight + 6;
+  }
+
+  /** Render XP progress bar with level indicator */
+  private renderXpBar(x: number, y: number, level: number, xp: number, xpToNext: number): number {
+    const barWidth = 120;
+    const barHeight = 10;
+
+    // Label with level
+    const labelText = this.scene.add.text(x, y, `Lv${level}:`, {
+      fontFamily: 'Arial',
+      fontSize: '10px',
+      color: COLORS.text,
+    });
+    this.container.add(labelText);
+    this.dynamicElements.push(labelText);
+
+    // Bar background
+    const barX = x + 30;
+    const barBg = this.scene.add.graphics();
+    barBg.fillStyle(0x333333, 1);
+    barBg.fillRect(barX, y, barWidth, barHeight);
+    this.container.add(barBg);
+    this.dynamicElements.push(barBg);
+
+    // Bar fill (XP progress)
+    const fillWidth = Math.max(0, (xp / xpToNext) * barWidth);
+    const barFill = this.scene.add.graphics();
+    barFill.fillStyle(parseInt(COLORS.xp.replace('#', ''), 16), 1);
+    barFill.fillRect(barX, y, fillWidth, barHeight);
+    this.container.add(barFill);
+    this.dynamicElements.push(barFill);
+
+    // Value text
+    const valueText = this.scene.add.text(barX + barWidth + 8, y, `${xp}/${xpToNext}`, {
+      fontFamily: 'Arial',
+      fontSize: '10px',
+      color: COLORS.xp,
+    });
+    this.container.add(valueText);
+    this.dynamicElements.push(valueText);
+
+    return y + barHeight + 6;
+  }
+
+  /** Render divider line */
+  private renderDivider(y: number): number {
+    const divider = this.scene.add.graphics();
+    divider.lineStyle(1, COLORS.sectionBorder, 0.5);
+    divider.lineBetween(-PANEL_WIDTH / 2 + PANEL_PADDING, y, PANEL_WIDTH / 2 - PANEL_PADDING, y);
+    this.container.add(divider);
+    this.dynamicElements.push(divider);
+    return y + 8;
+  }
+
+  /** Render equipped gems section */
+  private renderEquippedSection(minion: Minion, startY: number): number {
+    let y = startY;
+    const leftX = -PANEL_WIDTH / 2 + PANEL_PADDING;
+    const equippedGems = minion.getAbilitySystem().getEquippedGems();
+
+    // Section header
+    const header = this.scene.add.text(leftX, y, 'EQUIPPED', {
+      fontFamily: 'Arial',
+      fontSize: '10px',
+      color: COLORS.subtitle,
+    });
+    this.container.add(header);
+    this.dynamicElements.push(header);
+    y += 16;
+
+    if (equippedGems.length === 0) {
+      const emptyText = this.scene.add.text(leftX, y, 'No gems equipped', {
+        fontFamily: 'Arial',
+        fontSize: '10px',
+        color: COLORS.hint,
+        fontStyle: 'italic',
+      });
+      this.container.add(emptyText);
+      this.dynamicElements.push(emptyText);
+      y += 20;
+    } else {
+      for (let slot = 0; slot < equippedGems.length; slot++) {
+        y = this.renderEquippedGemRow(minion, equippedGems[slot], slot, leftX, y);
+      }
+    }
+
+    y = this.renderDivider(y + 4);
+    return y;
+  }
+
+  /** Render a single equipped gem row */
+  private renderEquippedGemRow(minion: Minion, gem: AbilityGem, slot: number, x: number, y: number): number {
+    const entry = GemRegistry.get(gem.id);
+    if (!entry) return y + ROW_HEIGHT;
+
+    const visual = getGemVisual(gem.id);
+
+    // Gem icon
+    const icon = this.scene.add.circle(x + 10, y + 12, 8, visual.color);
+    icon.setStrokeStyle(1, 0xffffff, 0.6);
+    this.container.add(icon);
+    this.dynamicElements.push(icon);
+
+    // Gem name
+    const nameText = this.scene.add.text(x + 26, y + 4, entry.name, {
+      fontFamily: 'Arial',
+      fontSize: '11px',
+      color: COLORS.text,
+      fontStyle: 'bold',
+    });
+    this.container.add(nameText);
+    this.dynamicElements.push(nameText);
+
+    // Description
+    const descText = this.scene.add.text(x + 26, y + 18, entry.description, {
+      fontFamily: 'Arial',
+      fontSize: '9px',
+      color: COLORS.hint,
+      wordWrap: { width: 200 },
+    });
+    this.container.add(descText);
+    this.dynamicElements.push(descText);
+
+    // Remove button
+    const removeBtn = this.scene.add.text(PANEL_WIDTH / 2 - PANEL_PADDING - 50, y + 10, '[Remove]', {
+      fontFamily: 'Arial',
+      fontSize: '9px',
+      color: COLORS.remove,
+    });
+    removeBtn.setInteractive({ useHandCursor: true });
+    removeBtn.on('pointerover', () => removeBtn.setColor('#ff9999'));
+    removeBtn.on('pointerout', () => removeBtn.setColor(COLORS.remove));
+    removeBtn.on('pointerdown', () => {
+      this.onGemRemoved?.(minion, slot, gem.id);
+      this.close();
+    });
+    this.container.add(removeBtn);
+    this.dynamicElements.push(removeBtn);
+
+    return y + 36;
+  }
+
+  /** Render inventory gems section */
+  private renderInventorySection(minion: Minion, startY: number): number {
+    if (!this.inventory) return startY;
+
+    let y = startY;
+    const leftX = -PANEL_WIDTH / 2 + PANEL_PADDING;
+
+    const equippedIds = new Set(minion.getAbilitySystem().getEquippedGems().map(g => g.id));
+    const availableGems = this.inventory.getGems().filter(g => !equippedIds.has(g.gemId));
+
+    // Section header
+    const header = this.scene.add.text(leftX, y, 'INVENTORY', {
+      fontFamily: 'Arial',
+      fontSize: '10px',
+      color: COLORS.subtitle,
+    });
+    this.container.add(header);
+    this.dynamicElements.push(header);
+    y += 16;
+
+    if (availableGems.length === 0) {
+      const emptyText = this.scene.add.text(leftX, y, 'No gems available', {
+        fontFamily: 'Arial',
+        fontSize: '10px',
+        color: COLORS.hint,
+        fontStyle: 'italic',
+      });
+      this.container.add(emptyText);
+      this.dynamicElements.push(emptyText);
+      y += 20;
+    } else {
+      // Show up to 4 gems
+      const gemsToShow = availableGems.slice(0, 4);
+      for (const inventoryGem of gemsToShow) {
+        y = this.renderInventoryGemRow(minion, inventoryGem, leftX, y);
+      }
+    }
+
+    y = this.renderDivider(y + 4);
+    return y;
+  }
+
+  /** Render a single inventory gem row */
+  private renderInventoryGemRow(_minion: Minion, inventoryGem: InventoryGem, x: number, y: number): number {
+    const entry = GemRegistry.get(inventoryGem.gemId);
+    if (!entry) return y + ROW_HEIGHT;
+
+    const visual = getGemVisual(inventoryGem.gemId);
+    const cost = entry.essenceCost;
+    const canAfford = this.currencyDisplay.canAfford(cost);
+
+    // Gem icon
+    const icon = this.scene.add.circle(x + 10, y + 12, 8, visual.color);
+    icon.setStrokeStyle(1, 0xffffff, 0.6);
+    this.container.add(icon);
+    this.dynamicElements.push(icon);
+
+    // Gem name
+    const nameText = this.scene.add.text(x + 26, y + 4, entry.name, {
+      fontFamily: 'Arial',
+      fontSize: '11px',
+      color: canAfford ? COLORS.text : COLORS.hint,
+      fontStyle: 'bold',
+    });
+    this.container.add(nameText);
+    this.dynamicElements.push(nameText);
+
+    // Cost badge (more prominent)
+    const costBadgeX = x + 26 + nameText.width + 10;
+    const costBadgeY = y + 3;
+    const costBg = this.scene.add.graphics();
+    costBg.fillStyle(canAfford ? 0x4a3a00 : 0x333333, 1);
+    costBg.fillRoundedRect(costBadgeX, costBadgeY, 36, 14, 4);
+    this.container.add(costBg);
+    this.dynamicElements.push(costBg);
+
+    const costText = this.scene.add.text(costBadgeX + 4, costBadgeY + 1, `◆${cost}`, {
+      fontFamily: 'Arial',
+      fontSize: '10px',
+      color: canAfford ? COLORS.cost : COLORS.hint,
+      fontStyle: 'bold',
+    });
+    this.container.add(costText);
+    this.dynamicElements.push(costText);
+
+    // Description
+    const descText = this.scene.add.text(x + 26, y + 18, entry.description, {
+      fontFamily: 'Arial',
+      fontSize: '9px',
+      color: COLORS.hint,
+      wordWrap: { width: 180 },
+    });
+    this.container.add(descText);
+    this.dynamicElements.push(descText);
+
+    // Equip button
+    const btnColor = canAfford ? COLORS.button : COLORS.buttonDisabled;
+    const equipBtn = this.scene.add.text(PANEL_WIDTH / 2 - PANEL_PADDING - 40, y + 10, '[Equip]', {
+      fontFamily: 'Arial',
+      fontSize: '9px',
+      color: btnColor,
+    });
+
+    if (canAfford) {
+      equipBtn.setInteractive({ useHandCursor: true });
+      equipBtn.on('pointerover', () => equipBtn.setColor('#88ff88'));
+      equipBtn.on('pointerout', () => equipBtn.setColor(COLORS.button));
+      equipBtn.on('pointerdown', () => {
+        const gem = entry.createGem();
+        this.onInventoryGemEquipped?.(inventoryGem);
+        this.onGemSelected(gem, entry);
+      });
+    }
+
+    this.container.add(equipBtn);
+    this.dynamicElements.push(equipBtn);
+
+    return y + 36;
+  }
+
+  /** Render footer with repair button */
+  private renderFooter(minion: Minion, startY: number): number {
+    let y = startY;
+    const isDamaged = minion.getCurrentHp() < minion.getMaxHp();
+
+    // Repair button (if damaged)
+    if (this.onRepair && isDamaged) {
+      const canAfford = this.currencyDisplay.canAfford(this.repairCost);
+      const btnColor = canAfford ? COLORS.button : COLORS.buttonDisabled;
+
+      const repairBtn = this.scene.add.text(0, y, `[Repair - ${this.repairCost} Essence]`, {
+        fontFamily: 'Arial',
+        fontSize: '11px',
+        color: btnColor,
+        fontStyle: 'bold',
+      });
+      repairBtn.setOrigin(0.5, 0);
+
+      if (canAfford) {
+        repairBtn.setInteractive({ useHandCursor: true });
+        repairBtn.on('pointerover', () => repairBtn.setColor('#88ff88'));
+        repairBtn.on('pointerout', () => repairBtn.setColor(COLORS.button));
+        repairBtn.on('pointerdown', () => {
+          if (this.onRepair?.(minion)) {
+            this.close();
+          }
+        });
+      }
+
+      this.container.add(repairBtn);
+      this.dynamicElements.push(repairBtn);
+      y += 20;
+    }
+
+    // Close hint
+    const hint = this.scene.add.text(0, y, 'ESC to close', {
+      fontFamily: 'Arial',
+      fontSize: '9px',
+      color: COLORS.hint,
+    });
+    hint.setOrigin(0.5, 0);
+    this.container.add(hint);
+    this.dynamicElements.push(hint);
+    y += 16;
+
+    return y;
   }
 
   public close(): void {
@@ -301,19 +565,11 @@ export class UpgradeMenu {
     this.isMenuOpen = false;
     this.targetMinion = null;
 
-    // Remove click outside handler
     if (this.clickOutsideHandler) {
       this.scene.input.off('pointerdown', this.clickOutsideHandler);
       this.clickOutsideHandler = undefined;
     }
 
-    // Clean up empty text if present
-    if (this.emptyText) {
-      this.emptyText.destroy();
-      this.emptyText = undefined;
-    }
-
-    // Fade out
     this.scene.tweens.add({
       targets: this.container,
       alpha: 0,
@@ -321,11 +577,10 @@ export class UpgradeMenu {
       ease: 'Power2',
       onComplete: () => {
         this.container.setVisible(false);
-        this.clearGemCards();
+        this.clearDynamicElements();
       },
     });
 
-    // Reset cursor
     this.scene.input.setDefaultCursor('default');
   }
 
@@ -338,33 +593,18 @@ export class UpgradeMenu {
   }
 
   public update(): void {
-    if (!this.isMenuOpen || !this.targetMinion) return;
-
-    // Update position to follow minion
-    this.updatePosition();
-
-    // Update affordability of cards (only in purchase mode)
-    if (!this.inventory) {
-      this.currentOffers.forEach((entry, index) => {
-        if (this.gemCards[index]) {
-          this.gemCards[index].setCanAfford(this.currencyDisplay.canAfford(entry.essenceCost));
-        }
-      });
-    }
+    // Menu doesn't follow minion anymore - it's positioned once on open
   }
 
-  private updatePosition(): void {
+  private updatePosition(panelHeight: number): void {
     if (!this.targetMinion) return;
 
     const camera = this.scene.cameras.main;
-
-    // Target position above minion
     let targetX = this.targetMinion.x;
     let targetY = this.targetMinion.y + PANEL_OFFSET_Y;
 
-    // Clamp to camera bounds
     const halfWidth = PANEL_WIDTH / 2;
-    const halfHeight = PANEL_HEIGHT / 2;
+    const halfHeight = panelHeight / 2;
     const padding = 10;
 
     const minX = camera.scrollX + padding + halfWidth;
@@ -378,18 +618,9 @@ export class UpgradeMenu {
     this.container.setPosition(targetX, targetY);
   }
 
-  private selectGem(entry: GemRegistryEntry): void {
-    if (!this.currencyDisplay.canAfford(entry.essenceCost)) {
-      return;
-    }
-
-    const gem = entry.createGem();
-    this.onGemSelected(gem, entry);
-  }
-
-  private clearGemCards(): void {
-    this.gemCards.forEach(card => card.destroy());
-    this.gemCards = [];
+  private clearDynamicElements(): void {
+    this.dynamicElements.forEach(el => el.destroy());
+    this.dynamicElements = [];
   }
 
   public destroy(): void {

@@ -12,6 +12,12 @@ export interface GemEquipmentSystemConfig {
   inventory: InventoryState;
   /** Called when a gem is successfully equipped */
   onEquip?: (target: GemEquippable, gem: AbilityGem) => void;
+  /** Called to check if player can afford equip cost. Return true to allow equip. */
+  canAffordEquip?: (gemId: string) => boolean;
+  /** Called to spend the equip cost. Called after canAffordEquip returns true. */
+  spendEquipCost?: (gemId: string) => void;
+  /** Called when equip fails due to insufficient funds */
+  onCannotAfford?: (gemId: string) => void;
 }
 
 /**
@@ -25,10 +31,16 @@ export class GemEquipmentSystem {
   private actor: Actor<typeof gemEquipmentMachine>;
   private inventory: InventoryState;
   private onEquipCallback?: (target: GemEquippable, gem: AbilityGem) => void;
+  private canAffordEquip?: (gemId: string) => boolean;
+  private spendEquipCost?: (gemId: string) => void;
+  private onCannotAfford?: (gemId: string) => void;
 
   constructor(config: GemEquipmentSystemConfig) {
     this.inventory = config.inventory;
     this.onEquipCallback = config.onEquip;
+    this.canAffordEquip = config.canAffordEquip;
+    this.spendEquipCost = config.spendEquipCost;
+    this.onCannotAfford = config.onCannotAfford;
     this.actor = createActor(gemEquipmentMachine);
     this.actor.start();
   }
@@ -55,7 +67,7 @@ export class GemEquipmentSystem {
 
   /**
    * Attempt to equip the pending gem on a target.
-   * Returns true if successful, false if no pending gem or gem not in inventory.
+   * Returns true if successful, false if no pending gem, gem not in inventory, or can't afford.
    */
   tryEquipOn(target: GemEquippable): boolean {
     const pendingGem = this.getPendingGem();
@@ -67,12 +79,22 @@ export class GemEquipmentSystem {
       return false;
     }
 
+    // Check if player can afford the equip cost
+    if (this.canAffordEquip && !this.canAffordEquip(pendingGem.gemId)) {
+      this.onCannotAfford?.(pendingGem.gemId);
+      this.cancel();
+      return false;
+    }
+
     // Create the ability gem instance
     const abilityGem = this.inventory.createGemInstance(pendingGem);
     if (!abilityGem) {
       this.cancel();
       return false;
     }
+
+    // Spend the cost
+    this.spendEquipCost?.(pendingGem.gemId);
 
     // Remove from inventory and equip
     this.inventory.removeGem(pendingGem.instanceId);
