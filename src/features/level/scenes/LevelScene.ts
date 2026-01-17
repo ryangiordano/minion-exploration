@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { Minion, MINION_VISUAL_RADIUS } from '../../minions';
 import { Treasure, EssenceDropper } from '../../treasure';
 import { Enemy, EnemyTypeConfig } from '../../enemies';
-import { CombatManager, CombatXpTracker, GameEventManager, EdgeScrollCamera, WhistleSelection, SelectionManager } from '../../../core/components';
+import { CombatManager, CombatXpTracker, GameEventManager, EdgeScrollCamera, EdgeScrollIndicator, WhistleSelection, SelectionManager } from '../../../core/components';
 import { CurrencyDisplay } from '../ui/CurrencyDisplay';
 import { FloorDisplay } from '../ui/FloorDisplay';
 import { PartyDisplay } from '../ui/PartyDisplay';
@@ -12,7 +12,7 @@ import { WorldGem, GemDropper, InventoryState, getGemVisual, InventoryModal, Gem
 import { GameState, PartyManager } from '../../../core/game-state';
 import { LevelGenerator, LevelData } from '../../../core/level-generation';
 import { FloorTransition, DefeatTransition } from '../../../core/floor-transition';
-import { Vfx } from '../../../core/vfx';
+import { Vfx, MoveCommandIndicator } from '../../../core/vfx';
 import { CollectionSystem, CommandSystem } from '../systems';
 
 export class LevelScene extends Phaser.Scene {
@@ -24,6 +24,7 @@ export class LevelScene extends Phaser.Scene {
 
   // Camera control
   private edgeScrollCamera!: EdgeScrollCamera;
+  private edgeScrollIndicator!: EdgeScrollIndicator;
 
   // Selection and commands
   private selectionManager = new SelectionManager();
@@ -56,6 +57,8 @@ export class LevelScene extends Phaser.Scene {
 
   // Visual effects
   private vfx!: Vfx;
+  private moveCommandIndicator!: MoveCommandIndicator;
+  private isInMoveCommandMode = false;
 
   // Roguelike state
   private gameState = new GameState();
@@ -98,6 +101,11 @@ export class LevelScene extends Phaser.Scene {
       scrollSpeed: 400,
     });
 
+    // Setup edge-scroll indicator (visual feedback for camera panning)
+    this.edgeScrollIndicator = new EdgeScrollIndicator(this, {
+      edgeSize: this.edgeScrollCamera.getEdgeSize(),
+    });
+
     // Add visual reference grid
     this.createReferenceGrid(this.worldWidth, this.worldHeight);
 
@@ -132,7 +140,7 @@ export class LevelScene extends Phaser.Scene {
 
     // Add instructions
     const instructions = this.add.text(10, 10,
-      'Hold Space: Select | Left-click: Deselect | Right-click: Move/Attack | G: Grid | I: Inventory | E: Spawn | Edges: Pan',
+      'Hold Space: Select | A: Move | G: Grid | I: Inventory | E: Spawn | Edges: Pan',
       {
         fontSize: '12px',
         color: '#ffffff',
@@ -172,11 +180,24 @@ export class LevelScene extends Phaser.Scene {
 
     // Setup inventory controls
     this.setupInventoryControls();
+
+    // Setup move command mode (A key)
+    this.setupMoveCommandControls();
   }
 
   update(_time: number, delta: number): void {
     // Update edge-scroll camera
     this.edgeScrollCamera.update(delta);
+
+    // Update edge-scroll indicator with current scroll state
+    const scrollState = this.edgeScrollCamera.getScrollState();
+    this.edgeScrollIndicator.update(
+      delta,
+      scrollState.isScrollingLeft,
+      scrollState.isScrollingRight,
+      scrollState.isScrollingUp,
+      scrollState.isScrollingDown
+    );
 
     // Update whistle selection animation
     this.whistleSelection?.update(delta);
@@ -186,6 +207,12 @@ export class LevelScene extends Phaser.Scene {
 
     // Update party display
     this.partyDisplay.update();
+
+    // Update move command indicator if active
+    if (this.isInMoveCommandMode) {
+      const pointer = this.input.activePointer;
+      this.moveCommandIndicator.update(pointer.worldX, pointer.worldY);
+    }
 
     // Get active entities
     const activeMinions = this.minions.filter(m => !m.isDefeated());
@@ -432,6 +459,39 @@ export class LevelScene extends Phaser.Scene {
     });
   }
 
+  private setupMoveCommandControls(): void {
+    // Initialize the move command indicator
+    this.moveCommandIndicator = new MoveCommandIndicator(this);
+    this.moveCommandIndicator.setUnitSource(() => this.getSelectedMinions());
+
+    // A key to enter move command mode
+    const aKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.A);
+    aKey?.on('down', () => {
+      if (!this.selectionManager.hasSelection()) return;
+      if (this.isInMoveCommandMode) return;
+
+      this.enterMoveCommandMode();
+    });
+
+    // Escape to cancel move command mode
+    const escKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+    escKey?.on('down', () => {
+      if (this.isInMoveCommandMode) {
+        this.exitMoveCommandMode();
+      }
+    });
+  }
+
+  private enterMoveCommandMode(): void {
+    this.isInMoveCommandMode = true;
+    this.moveCommandIndicator.show();
+  }
+
+  private exitMoveCommandMode(): void {
+    this.isInMoveCommandMode = false;
+    this.moveCommandIndicator.hide();
+  }
+
   private tryOpenUpgradeMenu(): void {
     // Don't reopen if already open
     if (this.upgradeMenu?.isOpen()) {
@@ -503,6 +563,21 @@ export class LevelScene extends Phaser.Scene {
 
   private setupClickControls(): void {
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      // Handle move command mode
+      if (this.isInMoveCommandMode) {
+        if (pointer.leftButtonDown()) {
+          // Confirm move command
+          this.commandSystem.moveToWithScatter(pointer.worldX, pointer.worldY);
+          this.exitMoveCommandMode();
+          return;
+        }
+        if (pointer.rightButtonDown()) {
+          // Cancel move command mode
+          this.exitMoveCommandMode();
+          return;
+        }
+      }
+
       // Left-click = deselect all
       if (pointer.leftButtonDown()) {
         this.selectionManager.clearSelection();
