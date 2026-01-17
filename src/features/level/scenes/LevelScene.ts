@@ -12,6 +12,8 @@ import { WorldGem, GemDropper, InventoryState, getGemVisual, InventoryModal, Inv
 import { GameState } from '../../../core/game-state';
 import { LevelGenerator, LevelData } from '../../../core/level-generation';
 import { FloorTransition } from '../../../core/floor-transition';
+import { Vfx } from '../../../core/vfx';
+import { CollectionSystem } from '../systems';
 
 // Visual feedback colors
 const CLICK_COLORS = {
@@ -44,7 +46,10 @@ export class LevelScene extends Phaser.Scene {
   // Loot
   private essenceDropper!: EssenceDropper;
   private gemDropper!: GemDropper;
-  private worldGems: WorldGem[] = [];
+
+  // Collection systems
+  private treasureCollection = new CollectionSystem<Treasure>();
+  private gemCollection = new CollectionSystem<WorldGem>();
 
   // Inventory
   private inventory = new InventoryState();
@@ -53,6 +58,9 @@ export class LevelScene extends Phaser.Scene {
 
   // Upgrade menu
   private upgradeMenu?: UpgradeMenu;
+
+  // Visual effects
+  private vfx!: Vfx;
 
   // Roguelike state
   private gameState = new GameState();
@@ -100,6 +108,9 @@ export class LevelScene extends Phaser.Scene {
     // Event manager for floating text and other UI feedback
     this.eventManager = new GameEventManager(this);
 
+    // Visual effects manager
+    this.vfx = new Vfx(this);
+
     // Spawn treasures around the world
     this.spawnTreasures(this.worldWidth, this.worldHeight);
 
@@ -139,6 +150,9 @@ export class LevelScene extends Phaser.Scene {
 
     // Gem dropper for ability gem drops
     this.gemDropper = new GemDropper(this);
+
+    // Setup collection system callbacks
+    this.setupCollectionSystems();
 
     // Setup spawn minion key
     this.setupSpawnControls();
@@ -180,11 +194,9 @@ export class LevelScene extends Phaser.Scene {
       enemy.update(delta);
     });
 
-    // Check for treasure collection
-    this.checkTreasureCollection(activeMinions);
-
-    // Check for gem collection
-    this.checkGemCollection(activeMinions);
+    // Check for collections
+    this.treasureCollection.update(activeMinions);
+    this.gemCollection.update(activeMinions);
 
     // Check win/lose conditions (only if not already transitioning)
     if (!this.isTransitioning) {
@@ -284,264 +296,58 @@ export class LevelScene extends Phaser.Scene {
     });
   }
 
-  private checkTreasureCollection(minions: Minion[]): void {
-    const collectDistance = 25; // Distance at which treasure is collected
+  private setupCollectionSystems(): void {
+    // Treasure collection - plays arc effect and adds currency
+    this.treasureCollection.onCollect(({ item, x, y }) => {
+      item.collect();
+      this.showCollectEffect(x, y);
+    });
 
-    for (let i = this.treasures.length - 1; i >= 0; i--) {
-      const treasure = this.treasures[i];
-      if (treasure.isCollected() || !treasure.isCollectible()) continue;
-
-      for (const minion of minions) {
-        const dist = Phaser.Math.Distance.Between(minion.x, minion.y, treasure.x, treasure.y);
-        if (dist < collectDistance) {
-          const x = treasure.x;
-          const y = treasure.y;
-          treasure.collect();
-          this.treasures.splice(i, 1);
-
-          // Show collection effects - currency updates when orb arrives
-          this.showCollectEffect(x, y);
-          break;
-        }
+    // Gem collection - adds to inventory
+    this.gemCollection.onCollect(({ item, x, y }) => {
+      const gemId = item.collect();
+      if (gemId) {
+        this.inventory.addGem(gemId);
+        this.showGemPickupEffect(x, y, gemId);
       }
-    }
-  }
-
-  private checkGemCollection(minions: Minion[]): void {
-    const collectDistance = 25;
-
-    for (let i = this.worldGems.length - 1; i >= 0; i--) {
-      const gem = this.worldGems[i];
-      if (gem.isCollected() || !gem.isCollectible()) continue;
-
-      for (const minion of minions) {
-        const dist = Phaser.Math.Distance.Between(minion.x, minion.y, gem.x, gem.y);
-        if (dist < collectDistance) {
-          const x = gem.x;
-          const y = gem.y;
-          const gemId = gem.collect();
-          this.worldGems.splice(i, 1);
-
-          if (gemId) {
-            // Add to inventory
-            this.inventory.addGem(gemId);
-
-            // Show pickup effect
-            this.showGemPickupEffect(x, y, gemId);
-          }
-          break;
-        }
-      }
-    }
+    });
   }
 
   private showGemPickupEffect(x: number, y: number, gemId: string): void {
     const visual = getGemVisual(gemId);
-
-    // Burst particles in gem color
-    const particleCount = 8;
-    for (let i = 0; i < particleCount; i++) {
-      const angle = (i / particleCount) * Math.PI * 2;
-      const particle = this.add.circle(x, y, 4, visual.color);
-
-      this.tweens.add({
-        targets: particle,
-        x: x + Math.cos(angle) * 30,
-        y: y + Math.sin(angle) * 30,
-        alpha: 0,
-        scale: 0,
-        duration: 250,
-        ease: 'Power2',
-        onComplete: () => particle.destroy(),
-      });
-    }
-
-    // Floating text showing gem name
-    const text = this.add.text(x, y - 20, `+${visual.name}`, {
-      fontSize: '14px',
+    this.vfx.burst.play(x, y, visual.color);
+    this.vfx.text.show(x, y, `+${visual.name}`, {
       color: `#${visual.color.toString(16).padStart(6, '0')}`,
-      fontStyle: 'bold',
-      stroke: '#000000',
-      strokeThickness: 2,
-    });
-    text.setOrigin(0.5, 1);
-
-    this.tweens.add({
-      targets: text,
-      y: y - 50,
-      alpha: 0,
-      duration: 800,
-      ease: 'Power2',
-      onComplete: () => text.destroy(),
+      bold: true,
     });
   }
 
   /** Animated essence orb that arcs from world position to UI */
   private showCollectEffect(worldX: number, worldY: number): void {
-    // Initial burst at pickup location
-    this.showPickupBurst(worldX, worldY);
+    // Burst at pickup location
+    this.vfx.burst.play(worldX, worldY, 0xffd700, { count: 6, distance: 25, size: 3, duration: 200 });
 
-    // Convert world position to screen position for the arc animation
-    const startScreenX = worldX - this.cameras.main.scrollX;
-    const startScreenY = worldY - this.cameras.main.scrollY;
-
-    // Target position (currency display)
+    // Arc projectile to currency display
     const target = this.currencyDisplay.getTargetPosition();
-
-    // Create essence orb (gold)
-    const orb = this.add.circle(startScreenX, startScreenY, 8, 0xffd700);
-    orb.setStrokeStyle(3, 0xb8860b, 0.8);
-    orb.setScrollFactor(0);
-    orb.setDepth(1000);
-
-    // Animation duration
-    const duration = 400;
-
-    // Calculate arc control point (rises up before curving down)
-    const midX = (startScreenX + target.x) / 2;
-    const arcHeight = Math.min(150, Math.abs(target.y - startScreenY) + 80);
-    const controlY = Math.min(startScreenY, target.y) - arcHeight;
-
-    // Trail spawn timing
-    let lastTrailTime = 0;
-    const trailInterval = 40; // ms between trail particles
-
-    // Animate along quadratic bezier curve
-    this.tweens.addCounter({
-      from: 0,
-      to: 1,
-      duration,
-      ease: 'Power2.in',
-      onUpdate: (tween) => {
-        const t = tween.getValue() ?? 0;
-
-        // Quadratic bezier: B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
-        const oneMinusT = 1 - t;
-        const newX =
-          oneMinusT * oneMinusT * startScreenX +
-          2 * oneMinusT * t * midX +
-          t * t * target.x;
-        const newY =
-          oneMinusT * oneMinusT * startScreenY +
-          2 * oneMinusT * t * controlY +
-          t * t * target.y;
-
-        orb.setPosition(newX, newY);
-
-        // Pulse scale during flight
-        const pulse = 1 + Math.sin(t * Math.PI * 3) * 0.2;
-        orb.setScale(pulse);
-
-        // Spawn trail particles at intervals
-        const currentTime = t * duration;
-        if (currentTime - lastTrailTime >= trailInterval) {
-          lastTrailTime = currentTime;
-          this.spawnTrailParticle(newX, newY);
-        }
-      },
-      onComplete: () => {
-        orb.destroy();
-        this.onEssenceArrived();
-      },
+    this.vfx.arc.launch(worldX, worldY, target.x, target.y, () => {
+      this.onEssenceArrived();
     });
-  }
-
-  /** Spawns a fading trail particle at the given screen position */
-  private spawnTrailParticle(x: number, y: number): void {
-    const trail = this.add.circle(x, y, 5, 0xffd700, 1);
-    trail.setScrollFactor(0);
-    trail.setDepth(999);
-
-    this.tweens.add({
-      targets: trail,
-      alpha: 0,
-      scale: 0.3,
-      duration: 500,
-      ease: 'Power1',
-      onComplete: () => trail.destroy(),
-    });
-  }
-
-  /** Small burst effect at pickup location */
-  private showPickupBurst(x: number, y: number): void {
-    const particleCount = 6;
-    for (let i = 0; i < particleCount; i++) {
-      const angle = (i / particleCount) * Math.PI * 2;
-      const particle = this.add.circle(x, y, 3, 0xffd700);
-
-      this.tweens.add({
-        targets: particle,
-        x: x + Math.cos(angle) * 25,
-        y: y + Math.sin(angle) * 25,
-        alpha: 0,
-        scale: 0,
-        duration: 200,
-        ease: 'Power2',
-        onComplete: () => particle.destroy(),
-      });
-    }
   }
 
   /** Called when essence orb arrives at the UI */
   private onEssenceArrived(): void {
-    // Update currency
     this.currencyDisplay.add(this.TREASURE_VALUE);
-
-    // Pop the display
     this.currencyDisplay.pop();
 
-    // Particle burst at UI
-    this.showArrivalBurst();
-
-    // Floating +value text
-    this.showValueText();
-  }
-
-  /** Particle burst when essence arrives at UI */
-  private showArrivalBurst(): void {
     const target = this.currencyDisplay.getTargetPosition();
-    const particleCount = 10;
-
-    for (let i = 0; i < particleCount; i++) {
-      const angle = (i / particleCount) * Math.PI * 2;
-      const particle = this.add.circle(target.x, target.y, 4, 0xffd700);
-      particle.setScrollFactor(0);
-      particle.setDepth(999);
-
-      const distance = 30 + Math.random() * 20;
-      this.tweens.add({
-        targets: particle,
-        x: target.x + Math.cos(angle) * distance,
-        y: target.y + Math.sin(angle) * distance,
-        alpha: 0,
-        scale: 0.3,
-        duration: 300,
-        ease: 'Power2',
-        onComplete: () => particle.destroy(),
-      });
-    }
-  }
-
-  /** Floating +value text near the UI */
-  private showValueText(): void {
-    const target = this.currencyDisplay.getTargetPosition();
-
-    const floatingText = this.add.text(target.x, target.y - 20, `+${this.TREASURE_VALUE}`, {
+    this.vfx.burst.playUI(target.x, target.y, 0xffd700, { count: 10, randomizeDistance: true });
+    this.vfx.text.show(target.x, target.y, `+${this.TREASURE_VALUE}`, {
       fontSize: '16px',
       color: '#ffd700',
-      fontStyle: 'bold',
-    });
-    floatingText.setScrollFactor(0);
-    floatingText.setOrigin(0.5, 1);
-    floatingText.setDepth(1000);
-
-    this.tweens.add({
-      targets: floatingText,
-      y: target.y - 50,
-      alpha: 0,
-      duration: 700,
-      ease: 'Power2',
-      onComplete: () => floatingText.destroy(),
+      bold: true,
+      strokeThickness: 0,
+      isUI: true,
+      depth: 1000,
     });
   }
 
@@ -659,30 +465,11 @@ export class LevelScene extends Phaser.Scene {
     });
 
     // Sparkle particles around minion
-    const particleCount = 8;
-    for (let i = 0; i < particleCount; i++) {
-      const angle = (i / particleCount) * Math.PI * 2;
-      const startDist = 10;
-      const endDist = 40;
-
-      const particle = this.add.circle(
-        minion.x + Math.cos(angle) * startDist,
-        minion.y + Math.sin(angle) * startDist,
-        4,
-        0xffcc00
-      );
-
-      this.tweens.add({
-        targets: particle,
-        x: minion.x + Math.cos(angle) * endDist,
-        y: minion.y + Math.sin(angle) * endDist,
-        alpha: 0,
-        scale: 0.3,
-        duration: 300,
-        ease: 'Power2',
-        onComplete: () => particle.destroy(),
-      });
-    }
+    this.vfx.burst.play(minion.x, minion.y, 0xffcc00, {
+      startRadius: 10,
+      distance: 30,
+      duration: 300,
+    });
   }
 
   /** Arrange selected minions in a grid formation centered on the mouse position */
@@ -773,22 +560,7 @@ export class LevelScene extends Phaser.Scene {
   }
 
   private showClickEffect(x: number, y: number, color: number): void {
-    const circle = this.add.circle(x, y, 30, color, 0);
-    circle.setStrokeStyle(3, color, 0.8);
-
-    this.tweens.add({
-      targets: circle,
-      radius: 8,
-      alpha: 0,
-      duration: 250,
-      ease: 'Power2',
-      onUpdate: () => {
-        circle.setRadius(circle.radius);
-      },
-      onComplete: () => {
-        circle.destroy();
-      }
-    });
+    this.vfx.click.show(x, y, color);
   }
 
   private createReferenceGrid(worldWidth: number, worldHeight: number): void {
