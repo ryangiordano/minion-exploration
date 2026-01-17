@@ -66,6 +66,10 @@ export class UpgradeMenu {
   private clickOutsideHandler?: (pointer: Phaser.Input.Pointer) => void;
   private isMenuOpen = false;
 
+  // Pagination state for inventory section
+  private inventoryPage = 0;
+  private inventoryGemsPerPage = 4;
+
   constructor(config: UpgradeMenuConfig) {
     this.scene = config.scene;
     this.currencyDisplay = config.currencyDisplay;
@@ -120,6 +124,7 @@ export class UpgradeMenu {
 
     this.targetMinion = minion;
     this.isMenuOpen = true;
+    this.inventoryPage = 0;
     this.clearDynamicElements();
 
     // Build the UI
@@ -391,17 +396,24 @@ export class UpgradeMenu {
     return y + 36;
   }
 
-  /** Render inventory gems section */
+  /** Render inventory gems section with pagination */
   private renderInventorySection(minion: Minion, startY: number): number {
     if (!this.inventory) return startY;
 
     let y = startY;
     const leftX = -PANEL_WIDTH / 2 + PANEL_PADDING;
+    const rightX = PANEL_WIDTH / 2 - PANEL_PADDING;
 
     const equippedIds = new Set(minion.getAbilitySystem().getEquippedGems().map(g => g.id));
     const availableGems = this.inventory.getGems().filter(g => !equippedIds.has(g.gemId));
 
-    // Section header
+    // Calculate pagination
+    const totalPages = Math.max(1, Math.ceil(availableGems.length / this.inventoryGemsPerPage));
+    this.inventoryPage = Math.min(this.inventoryPage, totalPages - 1);
+    const startIndex = this.inventoryPage * this.inventoryGemsPerPage;
+    const endIndex = Math.min(startIndex + this.inventoryGemsPerPage, availableGems.length);
+
+    // Section header with pagination arrows
     const header = this.scene.add.text(leftX, y, 'INVENTORY', {
       fontFamily: 'Arial',
       fontSize: '10px',
@@ -409,6 +421,12 @@ export class UpgradeMenu {
     });
     this.container.add(header);
     this.dynamicElements.push(header);
+
+    // Pagination controls (only show if more than one page)
+    if (totalPages > 1) {
+      this.renderPaginationControls(minion, rightX, y, totalPages);
+    }
+
     y += 16;
 
     if (availableGems.length === 0) {
@@ -422,8 +440,8 @@ export class UpgradeMenu {
       this.dynamicElements.push(emptyText);
       y += 20;
     } else {
-      // Show up to 4 gems
-      const gemsToShow = availableGems.slice(0, 4);
+      // Show gems for current page
+      const gemsToShow = availableGems.slice(startIndex, endIndex);
       for (const inventoryGem of gemsToShow) {
         y = this.renderInventoryGemRow(minion, inventoryGem, leftX, y);
       }
@@ -431,6 +449,86 @@ export class UpgradeMenu {
 
     y = this.renderDivider(y + 4);
     return y;
+  }
+
+  /** Render pagination arrows and page indicator */
+  private renderPaginationControls(minion: Minion, rightX: number, y: number, totalPages: number): void {
+    const arrowSpacing = 12;
+
+    // Page indicator (e.g., "1/3")
+    const pageText = this.scene.add.text(rightX, y, `${this.inventoryPage + 1}/${totalPages}`, {
+      fontFamily: 'Arial',
+      fontSize: '10px',
+      color: COLORS.subtitle,
+    });
+    pageText.setOrigin(1, 0);
+    this.container.add(pageText);
+    this.dynamicElements.push(pageText);
+
+    // Right arrow
+    const canGoRight = this.inventoryPage < totalPages - 1;
+    const rightArrow = this.scene.add.text(rightX - pageText.width - 4, y, '>', {
+      fontFamily: 'Arial',
+      fontSize: '10px',
+      color: canGoRight ? COLORS.text : COLORS.hint,
+      fontStyle: 'bold',
+    });
+    rightArrow.setOrigin(1, 0);
+    if (canGoRight) {
+      rightArrow.setInteractive({ useHandCursor: true });
+      rightArrow.on('pointerover', () => rightArrow.setColor('#ffffff'));
+      rightArrow.on('pointerout', () => rightArrow.setColor(COLORS.text));
+      rightArrow.on('pointerdown', () => {
+        this.inventoryPage++;
+        this.refreshMenu(minion);
+      });
+    }
+    this.container.add(rightArrow);
+    this.dynamicElements.push(rightArrow);
+
+    // Left arrow
+    const canGoLeft = this.inventoryPage > 0;
+    const leftArrow = this.scene.add.text(rightX - pageText.width - arrowSpacing - 4, y, '<', {
+      fontFamily: 'Arial',
+      fontSize: '10px',
+      color: canGoLeft ? COLORS.text : COLORS.hint,
+      fontStyle: 'bold',
+    });
+    leftArrow.setOrigin(1, 0);
+    if (canGoLeft) {
+      leftArrow.setInteractive({ useHandCursor: true });
+      leftArrow.on('pointerover', () => leftArrow.setColor('#ffffff'));
+      leftArrow.on('pointerout', () => leftArrow.setColor(COLORS.text));
+      leftArrow.on('pointerdown', () => {
+        this.inventoryPage--;
+        this.refreshMenu(minion);
+      });
+    }
+    this.container.add(leftArrow);
+    this.dynamicElements.push(leftArrow);
+  }
+
+  /** Refresh the menu content without closing it */
+  private refreshMenu(minion: Minion): void {
+    this.clearDynamicElements();
+
+    let currentY = 0;
+    currentY = this.renderHeader(minion, currentY);
+    currentY = this.renderEquippedSection(minion, currentY);
+    currentY = this.renderInventorySection(minion, currentY);
+    currentY = this.renderFooter(minion, currentY);
+
+    const totalHeight = currentY + PANEL_PADDING;
+    this.drawBackground(totalHeight);
+
+    const offsetY = -totalHeight / 2;
+    this.dynamicElements.forEach(el => {
+      if ('y' in el) {
+        (el as unknown as { y: number }).y += offsetY;
+      }
+    });
+
+    this.updatePosition(totalHeight);
   }
 
   /** Render a single inventory gem row */

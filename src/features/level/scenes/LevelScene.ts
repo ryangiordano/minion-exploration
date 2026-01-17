@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { Minion, MINION_VISUAL_RADIUS } from '../../minions';
 import { Treasure, EssenceDropper } from '../../treasure';
 import { Enemy, EnemyTypeConfig } from '../../enemies';
-import { CombatManager, CombatXpTracker, GameEventManager, EdgeScrollCamera, EdgeScrollIndicator, WhistleSelection, SelectionManager } from '../../../core/components';
+import { CombatManager, CombatXpTracker, GameEventManager, EdgeScrollCamera, EdgeScrollIndicator, SelectionManager } from '../../../core/components';
 import { CurrencyDisplay } from '../ui/CurrencyDisplay';
 import { FloorDisplay } from '../ui/FloorDisplay';
 import { PartyDisplay } from '../ui/PartyDisplay';
@@ -28,7 +28,6 @@ export class LevelScene extends Phaser.Scene {
 
   // Selection and commands
   private selectionManager = new SelectionManager();
-  private whistleSelection?: WhistleSelection;
   private commandSystem!: CommandSystem;
 
   // Currency
@@ -58,7 +57,6 @@ export class LevelScene extends Phaser.Scene {
   // Visual effects
   private vfx!: Vfx;
   private targetingIndicator!: TargetingIndicator;
-  private isInMoveCommandMode = false;
 
   // Roguelike state
   private gameState = new GameState();
@@ -132,15 +130,15 @@ export class LevelScene extends Phaser.Scene {
     // Spawn starting minions
     this.spawnStartingMinions();
 
-    // Setup whistle selection (hold Space to grow selection circle)
-    this.setupWhistleSelection();
+    // Setup selection controls (A = select all, 1/2/3 = select individual)
+    this.setupSelectionControls();
 
     // Setup click controls
     this.setupClickControls();
 
     // Add instructions
     const instructions = this.add.text(10, 10,
-      'Hold Space: Select | A: Move | G: Grid | I: Inventory | E: Spawn | Edges: Pan',
+      'A: Select All | 1/2/3: Select Minion | Right-Click: Move | G: Grid | I: Inventory | E: Spawn',
       {
         fontSize: '12px',
         color: '#ffffff',
@@ -199,8 +197,6 @@ export class LevelScene extends Phaser.Scene {
       scrollState.isScrollingDown
     );
 
-    // Update whistle selection animation
-    this.whistleSelection?.update(delta);
 
     // Update upgrade menu (follows minion position)
     this.upgradeMenu?.update();
@@ -208,11 +204,6 @@ export class LevelScene extends Phaser.Scene {
     // Update party display
     this.partyDisplay.update();
 
-    // Update targeting indicator if in move command mode
-    if (this.isInMoveCommandMode) {
-      const pointer = this.input.activePointer;
-      this.targetingIndicator.update(pointer.worldX, pointer.worldY);
-    }
 
     // Get active entities
     const activeMinions = this.minions.filter(m => !m.isDefeated());
@@ -460,30 +451,9 @@ export class LevelScene extends Phaser.Scene {
   }
 
   private setupMoveCommandControls(): void {
-    // Initialize targeting indicator (dashed lines during A key mode)
+    // Initialize targeting indicator (for visual feedback during move commands)
     this.targetingIndicator = new TargetingIndicator(this);
     this.targetingIndicator.setUnitSource(() => this.getSelectedMinions());
-
-    // A key to enter move command mode (alternative to right-click)
-    const aKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.A);
-    aKey?.on('down', () => {
-      if (!this.selectionManager.hasSelection()) return;
-      if (this.isInMoveCommandMode) return;
-
-      this.isInMoveCommandMode = true;
-      this.targetingIndicator.show();
-      this.input.setDefaultCursor('crosshair');
-    });
-
-    // Escape to cancel move command mode
-    const escKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
-    escKey?.on('down', () => {
-      if (this.isInMoveCommandMode) {
-        this.isInMoveCommandMode = false;
-        this.targetingIndicator.hide();
-        this.input.setDefaultCursor('default');
-      }
-    });
   }
 
   private tryOpenUpgradeMenu(): void {
@@ -541,41 +511,32 @@ export class LevelScene extends Phaser.Scene {
     this.commandSystem.gridLineup(pointer.worldX, pointer.worldY);
   }
 
-  private setupWhistleSelection(): void {
-    this.whistleSelection = new WhistleSelection(this, {
-      maxRadius: 150,
-      growRate: 200,
-    })
-      .bindKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
-      .setSelectableSource(() => this.minions)
-      .onSelect((units) => {
-        // Clear previous selection and select new units
-        this.selectionManager.clearSelection();
-        this.selectionManager.addMultipleToSelection(units as Minion[]);
-      });
+  private setupSelectionControls(): void {
+    // A key = select all minions
+    const aKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.A);
+    aKey?.on('down', () => {
+      this.selectionManager.clearSelection();
+      this.selectionManager.addMultipleToSelection(this.minions);
+    });
+
+    // 1/2/3 keys = select individual minion by index
+    const oneKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ONE);
+    const twoKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.TWO);
+    const threeKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.THREE);
+
+    oneKey?.on('down', () => this.selectMinionByIndex(0));
+    twoKey?.on('down', () => this.selectMinionByIndex(1));
+    threeKey?.on('down', () => this.selectMinionByIndex(2));
+  }
+
+  private selectMinionByIndex(index: number): void {
+    if (index < 0 || index >= this.minions.length) return;
+    this.selectionManager.clearSelection();
+    this.selectionManager.select(this.minions[index]);
   }
 
   private setupClickControls(): void {
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      // Handle move command mode (A key targeting)
-      if (this.isInMoveCommandMode) {
-        if (pointer.leftButtonDown()) {
-          // Confirm move command
-          this.commandSystem.moveToWithScatter(pointer.worldX, pointer.worldY);
-          this.isInMoveCommandMode = false;
-          this.targetingIndicator.hide();
-          this.input.setDefaultCursor('default');
-          return;
-        }
-        if (pointer.rightButtonDown()) {
-          // Cancel move command mode
-          this.isInMoveCommandMode = false;
-          this.targetingIndicator.hide();
-          this.input.setDefaultCursor('default');
-          return;
-        }
-      }
-
       // Left-click = deselect all
       if (pointer.leftButtonDown()) {
         this.selectionManager.clearSelection();
