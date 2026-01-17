@@ -55,6 +55,9 @@ export class LevelUpEffect {
    * Play the level up effect at the given position
    */
   public play(x: number, y: number): void {
+    // Guard against destroyed particles
+    if (!this.particles || !this.particles.active) return;
+
     this.particles.setPosition(x, y);
 
     // Set tint to a random color from our palette for the burst
@@ -107,6 +110,6 @@ export class LevelUpEffect {
   }
 
   public destroy(): void {
-    this.particles.destroy();
+    this.particles?.destroy();
   }
 }

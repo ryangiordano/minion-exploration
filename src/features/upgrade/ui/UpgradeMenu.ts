@@ -5,8 +5,9 @@ import { Minion } from '../../minions';
 import { CurrencyDisplay } from '../../level/ui/CurrencyDisplay';
 import { GemRegistry, GemRegistryEntry } from '../data/GemRegistry';
 import { GemCard } from './GemCard';
+import { InventoryState, InventoryGem } from '../../inventory';
 
-const PANEL_WIDTH = 280;
+const PANEL_WIDTH = 420;
 const PANEL_HEIGHT = 200;
 const PANEL_PADDING = 12;
 const CARD_SPACING = 16;
@@ -25,6 +26,10 @@ export interface UpgradeMenuConfig {
   currencyDisplay: CurrencyDisplay;
   onGemSelected: (gem: AbilityGem, entry: GemRegistryEntry) => void;
   onCancel: () => void;
+  /** If provided, shows inventory gems instead of purchasable random gems */
+  inventory?: InventoryState;
+  /** Called when equipping an inventory gem (removes from inventory) */
+  onInventoryGemEquipped?: (inventoryGem: InventoryGem) => void;
 }
 
 /**
@@ -35,6 +40,8 @@ export class UpgradeMenu {
   private currencyDisplay: CurrencyDisplay;
   private onGemSelected: (gem: AbilityGem, entry: GemRegistryEntry) => void;
   private onCancel: () => void;
+  private inventory?: InventoryState;
+  private onInventoryGemEquipped?: (inventoryGem: InventoryGem) => void;
 
   private container: Phaser.GameObjects.Container;
   private background: Phaser.GameObjects.Graphics;
@@ -42,6 +49,8 @@ export class UpgradeMenu {
   private hintText: Phaser.GameObjects.Text;
   private gemCards: GemCard[] = [];
   private currentOffers: GemRegistryEntry[] = [];
+  /** In inventory mode, tracks which inventory gems are being shown */
+  private currentInventoryGems: InventoryGem[] = [];
 
   private targetMinion: Minion | null = null;
   private escKey?: Phaser.Input.Keyboard.Key;
@@ -54,6 +63,8 @@ export class UpgradeMenu {
     this.currencyDisplay = config.currencyDisplay;
     this.onGemSelected = config.onGemSelected;
     this.onCancel = config.onCancel;
+    this.inventory = config.inventory;
+    this.onInventoryGemEquipped = config.onInventoryGemEquipped;
 
     // Create container (hidden initially)
     this.container = this.scene.add.container(0, 0);
@@ -64,8 +75,9 @@ export class UpgradeMenu {
     this.background = this.scene.add.graphics();
     this.container.add(this.background);
 
-    // Title
-    this.titleText = this.scene.add.text(0, -PANEL_HEIGHT / 2 + PANEL_PADDING + 8, 'UPGRADE MINION', {
+    // Title (changes based on mode)
+    const titleStr = this.inventory ? 'EQUIP GEM' : 'UPGRADE MINION';
+    this.titleText = this.scene.add.text(0, -PANEL_HEIGHT / 2 + PANEL_PADDING + 8, titleStr, {
       fontFamily: 'Arial',
       fontSize: '14px',
       color: COLORS.title,
@@ -126,54 +138,21 @@ export class UpgradeMenu {
     this.targetMinion = minion;
     this.isMenuOpen = true;
 
-    // Get current equipped gem to exclude from offers (optional: keep variety)
-    const equippedGems = minion.getAbilitySystem().getEquippedGems();
-    const excludeIds = equippedGems.map(g => g.id);
-
-    // Generate random gem offers
-    this.currentOffers = GemRegistry.getRandomGems(2, excludeIds);
-    console.log('Upgrade menu opened, offers:', this.currentOffers.length, this.currentOffers.map(o => o.name));
-
-    // If not enough gems available, just take what we can
-    if (this.currentOffers.length === 0) {
-      this.currentOffers = GemRegistry.getRandomGems(2);
-      console.log('Fallback offers:', this.currentOffers.length);
-    }
-
     // Clear old cards
     this.clearGemCards();
+    this.currentOffers = [];
+    this.currentInventoryGems = [];
 
-    // Create gem cards
-    const cardY = 15;
-    const totalCardWidth = this.currentOffers.length * 120 + (this.currentOffers.length - 1) * CARD_SPACING;
-    const startX = -totalCardWidth / 2 + 60;
-
-    console.log('About to create cards. Offers:', this.currentOffers.length, 'startX:', startX, 'cardY:', cardY);
-
-    for (let index = 0; index < this.currentOffers.length; index++) {
-      const entry = this.currentOffers[index];
-      const cardX = startX + index * (120 + CARD_SPACING);
-      const canAfford = this.currencyDisplay.canAfford(entry.essenceCost);
-
-      const card = new GemCard(this.scene, cardX, cardY, {
-        entry,
-        canAfford,
-        onClick: () => this.selectGem(entry),
-      });
-
-      // Add card container to menu container
-      const cardContainer = card.getContainer();
-      this.container.add(cardContainer);
-      this.gemCards.push(card);
-      console.log('Added card:', entry.name, 'at', cardX, cardY, 'container children after add:', this.container.list.length);
+    // Branch based on inventory mode vs purchase mode
+    console.log('UpgradeMenu.open - inventory mode:', !!this.inventory, 'inventory count:', this.inventory?.getCount());
+    if (this.inventory) {
+      this.openInventoryMode(minion);
+    } else {
+      this.openPurchaseMode(minion);
     }
-
-    // Debug: log all children of the menu container
-    console.log('Menu container total children:', this.container.list.length, this.container.list.map((c: Phaser.GameObjects.GameObject) => c.type));
 
     // Position menu near minion
     this.updatePosition();
-    console.log('Menu position:', this.container.x, this.container.y, 'visible:', this.container.visible, 'depth:', this.container.depth);
 
     // Show with fade in
     this.container.setAlpha(0);
@@ -209,6 +188,113 @@ export class UpgradeMenu {
     });
   }
 
+  /** Open in inventory mode - shows gems from player's inventory */
+  private openInventoryMode(minion: Minion): void {
+    if (!this.inventory) return;
+
+    // Get gems from inventory, excluding types already equipped
+    const equippedGems = minion.getAbilitySystem().getEquippedGems();
+    const equippedIds = new Set(equippedGems.map(g => g.id));
+
+    // Filter inventory to show gems not already equipped on this minion
+    const allGems = this.inventory.getGems();
+    const availableGems = allGems.filter(g => !equippedIds.has(g.gemId));
+    console.log('openInventoryMode - all gems:', allGems.length, 'available (not equipped):', availableGems.length);
+
+    // Show up to 3 gems (fits in wider panel)
+    this.currentInventoryGems = availableGems.slice(0, 3);
+
+    if (this.currentInventoryGems.length === 0) {
+      // Show empty state
+      this.showEmptyInventoryMessage();
+      return;
+    }
+
+    // Create gem cards for inventory gems
+    const cardY = 15;
+    const totalCardWidth = this.currentInventoryGems.length * 120 + (this.currentInventoryGems.length - 1) * CARD_SPACING;
+    const startX = -totalCardWidth / 2 + 60;
+
+    for (let index = 0; index < this.currentInventoryGems.length; index++) {
+      const inventoryGem = this.currentInventoryGems[index];
+      const entry = GemRegistry.get(inventoryGem.gemId);
+      if (!entry) continue;
+
+      const cardX = startX + index * (120 + CARD_SPACING);
+
+      const card = new GemCard(this.scene, cardX, cardY, {
+        entry,
+        canAfford: true, // Always affordable in inventory mode
+        hideCost: true,  // Don't show cost in inventory mode
+        onClick: () => this.selectInventoryGem(inventoryGem, entry),
+      });
+
+      const cardContainer = card.getContainer();
+      this.container.add(cardContainer);
+      this.gemCards.push(card);
+    }
+  }
+
+  /** Open in purchase mode - shows random gems for purchase */
+  private openPurchaseMode(minion: Minion): void {
+    // Get current equipped gem to exclude from offers
+    const equippedGems = minion.getAbilitySystem().getEquippedGems();
+    const excludeIds = equippedGems.map(g => g.id);
+
+    // Generate random gem offers
+    this.currentOffers = GemRegistry.getRandomGems(2, excludeIds);
+
+    // If not enough gems available, just take what we can
+    if (this.currentOffers.length === 0) {
+      this.currentOffers = GemRegistry.getRandomGems(2);
+    }
+
+    // Create gem cards
+    const cardY = 15;
+    const totalCardWidth = this.currentOffers.length * 120 + (this.currentOffers.length - 1) * CARD_SPACING;
+    const startX = -totalCardWidth / 2 + 60;
+
+    for (let index = 0; index < this.currentOffers.length; index++) {
+      const entry = this.currentOffers[index];
+      const cardX = startX + index * (120 + CARD_SPACING);
+      const canAfford = this.currencyDisplay.canAfford(entry.essenceCost);
+
+      const card = new GemCard(this.scene, cardX, cardY, {
+        entry,
+        canAfford,
+        onClick: () => this.selectGem(entry),
+      });
+
+      const cardContainer = card.getContainer();
+      this.container.add(cardContainer);
+      this.gemCards.push(card);
+    }
+  }
+
+  private emptyText?: Phaser.GameObjects.Text;
+
+  private showEmptyInventoryMessage(): void {
+    this.emptyText = this.scene.add.text(0, 15, 'No gems in inventory\nDefeat enemies to collect gems!', {
+      fontFamily: 'Arial',
+      fontSize: '12px',
+      color: '#888888',
+      align: 'center',
+    });
+    this.emptyText.setOrigin(0.5, 0.5);
+    this.container.add(this.emptyText);
+  }
+
+  /** Called when selecting an inventory gem to equip */
+  private selectInventoryGem(inventoryGem: InventoryGem, entry: GemRegistryEntry): void {
+    const gem = entry.createGem();
+
+    // Notify that we're equipping an inventory gem (so it can be removed from inventory)
+    this.onInventoryGemEquipped?.(inventoryGem);
+
+    // Also call the standard gem selected callback
+    this.onGemSelected(gem, entry);
+  }
+
   public close(): void {
     if (!this.isMenuOpen) return;
 
@@ -219,6 +305,12 @@ export class UpgradeMenu {
     if (this.clickOutsideHandler) {
       this.scene.input.off('pointerdown', this.clickOutsideHandler);
       this.clickOutsideHandler = undefined;
+    }
+
+    // Clean up empty text if present
+    if (this.emptyText) {
+      this.emptyText.destroy();
+      this.emptyText = undefined;
     }
 
     // Fade out
@@ -251,12 +343,14 @@ export class UpgradeMenu {
     // Update position to follow minion
     this.updatePosition();
 
-    // Update affordability of cards
-    this.currentOffers.forEach((entry, index) => {
-      if (this.gemCards[index]) {
-        this.gemCards[index].setCanAfford(this.currencyDisplay.canAfford(entry.essenceCost));
-      }
-    });
+    // Update affordability of cards (only in purchase mode)
+    if (!this.inventory) {
+      this.currentOffers.forEach((entry, index) => {
+        if (this.gemCards[index]) {
+          this.gemCards[index].setCanAfford(this.currencyDisplay.canAfford(entry.essenceCost));
+        }
+      });
+    }
   }
 
   private updatePosition(): void {

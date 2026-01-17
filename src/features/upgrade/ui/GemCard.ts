@@ -24,6 +24,8 @@ export interface GemCardConfig {
   entry: GemRegistryEntry;
   canAfford: boolean;
   onClick: () => void;
+  /** If true, hides the cost display (for inventory mode) */
+  hideCost?: boolean;
 }
 
 /**
@@ -40,6 +42,7 @@ export class GemCard {
   private entry: GemRegistryEntry;
   private canAfford: boolean;
   private onClick: () => void;
+  private hideCost: boolean;
   private isHovered = false;
 
   constructor(scene: Phaser.Scene, x: number, y: number, config: GemCardConfig) {
@@ -47,6 +50,7 @@ export class GemCard {
     this.entry = config.entry;
     this.canAfford = config.canAfford;
     this.onClick = config.onClick;
+    this.hideCost = config.hideCost ?? false;
 
     // Create container at the specified position (relative to parent if added to one)
     this.container = scene.add.container(x, y);
@@ -95,7 +99,7 @@ export class GemCard {
     this.typeText.setOrigin(0.5, 0.5);
     this.container.add(this.typeText);
 
-    // Cost text
+    // Cost text (hidden in inventory mode)
     this.costText = scene.add.text(0, CARD_HEIGHT / 2 - PADDING - 12, `Cost: ${this.entry.essenceCost}`, {
       fontFamily: 'Arial',
       fontSize: '11px',
@@ -103,6 +107,7 @@ export class GemCard {
       fontStyle: 'bold',
     });
     this.costText.setOrigin(0.5, 0.5);
+    this.costText.setVisible(!this.hideCost);
     this.container.add(this.costText);
 
     // Draw initial background

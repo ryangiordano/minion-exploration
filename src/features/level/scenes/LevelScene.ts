@@ -1,12 +1,17 @@
 import Phaser from 'phaser';
 import { Minion, MINION_VISUAL_RADIUS } from '../../minions';
 import { Treasure, EssenceDropper } from '../../treasure';
-import { Enemy, TargetDummy, LACKEY_CONFIG, BRUTE_CONFIG, EnemyTypeConfig } from '../../enemies';
+import { Enemy, EnemyTypeConfig } from '../../enemies';
 import { CombatManager, CombatXpTracker, GameEventManager, EdgeScrollCamera, WhistleSelection, SelectionManager } from '../../../core/components';
 import { CurrencyDisplay } from '../ui/CurrencyDisplay';
+import { FloorDisplay } from '../ui/FloorDisplay';
 import { Combatable } from '../../../core/types/interfaces';
-import { UpgradeMenu, GemRegistryEntry } from '../../upgrade';
+import { UpgradeMenu } from '../../upgrade';
 import { AbilityGem } from '../../../core/abilities/types';
+import { WorldGem, GemDropper, InventoryState, getGemVisual, InventoryModal, InventoryGem } from '../../inventory';
+import { GameState } from '../../../core/game-state';
+import { LevelGenerator, LevelData } from '../../../core/level-generation';
+import { FloorTransition } from '../../../core/floor-transition';
 
 // Visual feedback colors
 const CLICK_COLORS = {
@@ -19,7 +24,6 @@ export class LevelScene extends Phaser.Scene {
   private minions: Minion[] = [];
   private treasures: Treasure[] = [];
   private enemies: Enemy[] = [];
-  private targetDummies: TargetDummy[] = [];
   private combatManager = new CombatManager();
   private xpTracker = new CombatXpTracker({ baseXpPerKill: 10 });
   private eventManager?: GameEventManager;
@@ -33,14 +37,31 @@ export class LevelScene extends Phaser.Scene {
 
   // Currency
   private currencyDisplay!: CurrencyDisplay;
+  private floorDisplay!: FloorDisplay;
   private readonly MINION_COST = 10;
   private readonly TREASURE_VALUE = 5;
 
   // Loot
   private essenceDropper!: EssenceDropper;
+  private gemDropper!: GemDropper;
+  private worldGems: WorldGem[] = [];
+
+  // Inventory
+  private inventory = new InventoryState();
+  private inventoryModal?: InventoryModal;
+  private pendingGemEquip: InventoryGem | null = null;
 
   // Upgrade menu
   private upgradeMenu?: UpgradeMenu;
+
+  // Roguelike state
+  private gameState = new GameState();
+  private levelGenerator = new LevelGenerator();
+  private isTransitioning = false;
+
+  // World dimensions (stored for respawning)
+  private worldWidth = 1600;
+  private worldHeight = 1200;
 
   constructor() {
     super({ key: 'LevelScene' });
@@ -55,20 +76,17 @@ export class LevelScene extends Phaser.Scene {
   }
 
   create(): void {
-    // Create a larger world than the visible area
-    const worldWidth = 1600;
-    const worldHeight = 1200;
-    this.physics.world.setBounds(0, 0, worldWidth, worldHeight);
+    this.physics.world.setBounds(0, 0, this.worldWidth, this.worldHeight);
 
     // Add background color
     this.cameras.main.setBackgroundColor('#2d4a3e');
 
     // Set camera bounds to match world
-    this.cameras.main.setBounds(0, 0, worldWidth, worldHeight);
+    this.cameras.main.setBounds(0, 0, this.worldWidth, this.worldHeight);
 
     // Center camera initially
-    this.cameras.main.scrollX = (worldWidth - this.cameras.main.width) / 2;
-    this.cameras.main.scrollY = (worldHeight - this.cameras.main.height) / 2;
+    this.cameras.main.scrollX = (this.worldWidth - this.cameras.main.width) / 2;
+    this.cameras.main.scrollY = (this.worldHeight - this.cameras.main.height) / 2;
 
     // Setup edge-scroll camera (RTS-style)
     this.edgeScrollCamera = new EdgeScrollCamera(this, {
@@ -77,31 +95,19 @@ export class LevelScene extends Phaser.Scene {
     });
 
     // Add visual reference grid
-    this.createReferenceGrid(worldWidth, worldHeight);
+    this.createReferenceGrid(this.worldWidth, this.worldHeight);
 
     // Event manager for floating text and other UI feedback
     this.eventManager = new GameEventManager(this);
 
     // Spawn treasures around the world
-    this.spawnTreasures(worldWidth, worldHeight);
+    this.spawnTreasures(this.worldWidth, this.worldHeight);
 
-    // Spawn enemies around the world
-    this.spawnEnemies(worldWidth, worldHeight);
+    // Spawn enemies from level generator
+    this.spawnEnemiesFromLevelData();
 
-    // Spawn a target dummy near center for ability testing
-    this.spawnTargetDummy(worldWidth / 2 + 200, worldHeight / 2);
-
-    // Spawn minions near center
-    const minionPositions = [
-      { x: worldWidth / 2 + 100, y: worldHeight / 2 + 50 },
-      { x: worldWidth / 2 - 100, y: worldHeight / 2 + 50 },
-      { x: worldWidth / 2, y: worldHeight / 2 + 100 },
-      { x: worldWidth / 2, y: worldHeight / 2 - 100 }
-    ];
-
-    minionPositions.forEach((pos) => {
-      this.spawnMinion(pos.x, pos.y);
-    });
+    // Spawn starting minions
+    this.spawnStartingMinions();
 
     // Setup whistle selection (hold Space to grow selection circle)
     this.setupWhistleSelection();
@@ -111,7 +117,7 @@ export class LevelScene extends Phaser.Scene {
 
     // Add instructions
     const instructions = this.add.text(10, 10,
-      'Hold Space: Select | Left-click: Deselect | Right-click: Move/Attack | G: Grid | U: Upgrade | E: Spawn | Edges: Pan',
+      'Hold Space: Select | Left-click: Deselect | Right-click: Move/Attack | G: Grid | I: Inventory | E: Spawn | Edges: Pan',
       {
         fontSize: '12px',
         color: '#ffffff',
@@ -124,8 +130,15 @@ export class LevelScene extends Phaser.Scene {
     // Currency display
     this.currencyDisplay = new CurrencyDisplay(this);
 
+    // Floor display
+    this.floorDisplay = new FloorDisplay(this, 10, 50);
+    this.floorDisplay.setFloor(this.gameState.getFloor());
+
     // Essence dropper for enemy loot
     this.essenceDropper = new EssenceDropper(this);
+
+    // Gem dropper for ability gem drops
+    this.gemDropper = new GemDropper(this);
 
     // Setup spawn minion key
     this.setupSpawnControls();
@@ -135,6 +148,9 @@ export class LevelScene extends Phaser.Scene {
 
     // Setup upgrade controls
     this.setupUpgradeControls();
+
+    // Setup inventory controls
+    this.setupInventoryControls();
   }
 
   update(_time: number, delta: number): void {
@@ -166,6 +182,106 @@ export class LevelScene extends Phaser.Scene {
 
     // Check for treasure collection
     this.checkTreasureCollection(activeMinions);
+
+    // Check for gem collection
+    this.checkGemCollection(activeMinions);
+
+    // Check win/lose conditions (only if not already transitioning)
+    if (!this.isTransitioning) {
+      this.checkWinLoseConditions(activeMinions, activeEnemies);
+    }
+  }
+
+  private checkWinLoseConditions(activeMinions: Minion[], activeEnemies: Enemy[]): void {
+    // Lose condition: all minions dead
+    if (activeMinions.length === 0 && this.minions.length === 0) {
+      this.onDefeat();
+      return;
+    }
+
+    // Win condition: all enemies dead
+    if (activeEnemies.length === 0 && this.enemies.length === 0) {
+      this.onFloorCleared();
+    }
+  }
+
+  private onDefeat(): void {
+    this.isTransitioning = true;
+
+    // Play defeat transition (fade to white with text)
+    this.playDefeatTransition(() => {
+      // Reset game state and restart scene
+      this.gameState.reset();
+      this.scene.restart();
+    });
+  }
+
+  private playDefeatTransition(onComplete: () => void): void {
+    const { width, height } = this.cameras.main;
+
+    // Create white overlay
+    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0xffffff, 0);
+    overlay.setScrollFactor(0);
+    overlay.setDepth(2001);
+
+    // Fade to white
+    this.tweens.add({
+      targets: overlay,
+      alpha: 1,
+      duration: 800,
+      ease: 'Power2',
+      onComplete: () => {
+        // Show text
+        const text = this.add.text(width / 2, height / 2, 'You return to the surface...', {
+          fontSize: '28px',
+          color: '#000000',
+          fontStyle: 'italic',
+        });
+        text.setOrigin(0.5, 0.5);
+        text.setScrollFactor(0);
+        text.setDepth(2002);
+        text.setAlpha(0);
+
+        // Fade in text
+        this.tweens.add({
+          targets: text,
+          alpha: 1,
+          duration: 300,
+          ease: 'Power2',
+        });
+
+        // Wait then complete
+        this.time.delayedCall(1500, () => {
+          onComplete();
+        });
+      },
+    });
+  }
+
+  private onFloorCleared(): void {
+    this.isTransitioning = true;
+
+    // Heal all minions
+    this.minions.forEach(minion => {
+      minion.heal(minion.getMaxHp());
+    });
+
+    // Advance to next floor
+    const nextFloor = this.gameState.advanceFloor();
+
+    // Play transition sequence
+    const transition = new FloorTransition(this, {
+      transitionText: `Descending to floor ${nextFloor}...`,
+    });
+
+    transition.play(() => {
+      // Update floor display
+      this.floorDisplay.setFloor(nextFloor);
+
+      // Spawn new enemies after transition completes
+      this.spawnEnemiesFromLevelData();
+      this.isTransitioning = false;
+    });
   }
 
   private checkTreasureCollection(minions: Minion[]): void {
@@ -189,6 +305,75 @@ export class LevelScene extends Phaser.Scene {
         }
       }
     }
+  }
+
+  private checkGemCollection(minions: Minion[]): void {
+    const collectDistance = 25;
+
+    for (let i = this.worldGems.length - 1; i >= 0; i--) {
+      const gem = this.worldGems[i];
+      if (gem.isCollected() || !gem.isCollectible()) continue;
+
+      for (const minion of minions) {
+        const dist = Phaser.Math.Distance.Between(minion.x, minion.y, gem.x, gem.y);
+        if (dist < collectDistance) {
+          const x = gem.x;
+          const y = gem.y;
+          const gemId = gem.collect();
+          this.worldGems.splice(i, 1);
+
+          if (gemId) {
+            // Add to inventory
+            this.inventory.addGem(gemId);
+
+            // Show pickup effect
+            this.showGemPickupEffect(x, y, gemId);
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  private showGemPickupEffect(x: number, y: number, gemId: string): void {
+    const visual = getGemVisual(gemId);
+
+    // Burst particles in gem color
+    const particleCount = 8;
+    for (let i = 0; i < particleCount; i++) {
+      const angle = (i / particleCount) * Math.PI * 2;
+      const particle = this.add.circle(x, y, 4, visual.color);
+
+      this.tweens.add({
+        targets: particle,
+        x: x + Math.cos(angle) * 30,
+        y: y + Math.sin(angle) * 30,
+        alpha: 0,
+        scale: 0,
+        duration: 250,
+        ease: 'Power2',
+        onComplete: () => particle.destroy(),
+      });
+    }
+
+    // Floating text showing gem name
+    const text = this.add.text(x, y - 20, `+${visual.name}`, {
+      fontSize: '14px',
+      color: `#${visual.color.toString(16).padStart(6, '0')}`,
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 2,
+    });
+    text.setOrigin(0.5, 1);
+
+    this.tweens.add({
+      targets: text,
+      y: y - 50,
+      alpha: 0,
+      duration: 800,
+      ease: 'Power2',
+      onComplete: () => text.destroy(),
+    });
   }
 
   /** Animated essence orb that arcs from world position to UI */
@@ -381,11 +566,16 @@ export class LevelScene extends Phaser.Scene {
   }
 
   private setupUpgradeControls(): void {
-    // Initialize upgrade menu
+    // Initialize upgrade menu with inventory integration
     this.upgradeMenu = new UpgradeMenu({
       scene: this,
       currencyDisplay: this.currencyDisplay,
-      onGemSelected: (gem, entry) => this.handleGemSelection(gem, entry),
+      inventory: this.inventory,
+      onGemSelected: (gem) => this.handleGemSelectionFromInventory(gem),
+      onInventoryGemEquipped: (inventoryGem) => {
+        // Remove the gem from inventory when equipped
+        this.inventory.removeGem(inventoryGem.instanceId);
+      },
       onCancel: () => this.upgradeMenu?.close(),
     });
 
@@ -393,6 +583,37 @@ export class LevelScene extends Phaser.Scene {
     const uKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.U);
     uKey?.on('down', () => {
       this.tryOpenUpgradeMenu();
+    });
+  }
+
+  private setupInventoryControls(): void {
+    // Initialize inventory modal
+    this.inventoryModal = new InventoryModal({
+      scene: this,
+      inventory: this.inventory,
+      onGemSelected: (gem) => {
+        this.pendingGemEquip = gem;
+      },
+      onClose: () => {
+        // Clear pending if closed without equipping
+        if (this.pendingGemEquip) {
+          this.pendingGemEquip = null;
+        }
+      },
+    });
+
+    // I key to toggle inventory
+    const iKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.I);
+    if (!iKey) {
+      console.error('Failed to add I key');
+    }
+    iKey?.on('down', () => {
+      console.log('I key pressed, modal open:', this.inventoryModal?.isOpen());
+      if (this.inventoryModal?.isOpen()) {
+        this.inventoryModal.close();
+      } else {
+        this.inventoryModal?.open();
+      }
     });
   }
 
@@ -411,14 +632,10 @@ export class LevelScene extends Phaser.Scene {
     this.upgradeMenu?.open(selected[0]);
   }
 
-  private handleGemSelection(gem: AbilityGem, entry: GemRegistryEntry): void {
+  /** Handle equipping a gem from inventory (no cost) */
+  private handleGemSelectionFromInventory(gem: AbilityGem): void {
     const targetMinion = this.upgradeMenu?.getTargetMinion();
     if (!targetMinion) return;
-
-    // Deduct essence
-    if (!this.currencyDisplay.spend(entry.essenceCost)) {
-      return;
-    }
 
     // Equip the gem (replaces existing if any)
     targetMinion.equipGem(gem);
@@ -607,6 +824,14 @@ export class LevelScene extends Phaser.Scene {
     });
     this.minions.push(minion);
 
+    // Make minion clickable for gem equipping
+    minion.setInteractive({ useHandCursor: true });
+    minion.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (pointer.leftButtonDown() && this.pendingGemEquip) {
+        this.equipGemOnMinion(minion, this.pendingGemEquip);
+      }
+    });
+
     // Handle death
     minion.onDeath(() => {
       const index = this.minions.indexOf(minion);
@@ -622,6 +847,25 @@ export class LevelScene extends Phaser.Scene {
     });
 
     return minion;
+  }
+
+  private equipGemOnMinion(minion: Minion, inventoryGem: InventoryGem): void {
+    // Create the actual ability gem from inventory
+    const abilityGem = this.inventory.createGemInstance(inventoryGem);
+    if (!abilityGem) return;
+
+    // Remove from inventory
+    this.inventory.removeGem(inventoryGem.instanceId);
+
+    // Equip on minion
+    minion.equipGem(abilityGem);
+
+    // Clear pending and close inventory
+    this.pendingGemEquip = null;
+    this.inventoryModal?.close();
+
+    // Show equip effect
+    this.showGemEquipEffect(minion);
   }
 
   private spawnTreasures(worldWidth: number, worldHeight: number): void {
@@ -646,42 +890,40 @@ export class LevelScene extends Phaser.Scene {
     }
   }
 
-  private spawnEnemies(worldWidth: number, worldHeight: number): void {
-    const centerX = worldWidth / 2;
-    const centerY = worldHeight / 2;
+  /** Spawn enemies based on LevelGenerator output */
+  private spawnEnemiesFromLevelData(): void {
+    const levelData: LevelData = this.levelGenerator.generate(this.gameState.getFloor());
+    const centerX = this.worldWidth / 2;
+    const centerY = this.worldHeight / 2;
     const safeRadius = 400;
+    const packSpreadRadius = 80;
 
-    // Mixed packs: brutes with lackey escorts
-    this.spawnMixedPack(centerX, centerY, safeRadius, worldWidth, worldHeight, 1, 3);
-    this.spawnMixedPack(centerX, centerY, safeRadius, worldWidth, worldHeight, 1, 4);
-    this.spawnMixedPack(centerX, centerY, safeRadius + 100, worldWidth, worldHeight, 2, 5);
+    for (const pack of levelData.packs) {
+      const packCenter = this.getSpawnPositionAwayFrom(
+        centerX, centerY, safeRadius,
+        this.worldWidth, this.worldHeight
+      );
+
+      for (const enemySpawn of pack.enemies) {
+        const x = packCenter.x + enemySpawn.offsetX * packSpreadRadius;
+        const y = packCenter.y + enemySpawn.offsetY * packSpreadRadius;
+        this.spawnEnemy(x, y, enemySpawn.level, enemySpawn.type);
+      }
+    }
   }
 
-  /** Spawn a mixed pack with brutes in the center and lackeys around them */
-  private spawnMixedPack(
-    avoidX: number, avoidY: number, minDistance: number,
-    worldWidth: number, worldHeight: number,
-    bruteCount: number, lackeyCount: number
-  ): void {
-    const center = this.getSpawnPositionAwayFrom(avoidX, avoidY, minDistance, worldWidth, worldHeight);
+  /** Spawn minions at run start based on GameState config */
+  private spawnStartingMinions(): void {
+    const count = this.gameState.getStartingMinions();
+    const centerX = this.worldWidth / 2;
+    const centerY = this.worldHeight / 2;
+    const spacing = MINION_VISUAL_RADIUS * 3;
 
-    // Spawn brutes near center
-    for (let i = 0; i < bruteCount; i++) {
-      const angle = (i / bruteCount) * Math.PI * 2;
-      const distance = Phaser.Math.Between(0, 30);
-      const x = center.x + Math.cos(angle) * distance;
-      const y = center.y + Math.sin(angle) * distance;
-      this.spawnEnemy(x, y, 1, BRUTE_CONFIG);
-    }
-
-    // Spawn lackeys around the brutes
-    const lackeyRadius = 60 + BRUTE_CONFIG.radius;
-    for (let i = 0; i < lackeyCount; i++) {
-      const angle = (i / lackeyCount) * Math.PI * 2;
-      const distance = Phaser.Math.Between(40, lackeyRadius);
-      const x = center.x + Math.cos(angle) * distance;
-      const y = center.y + Math.sin(angle) * distance;
-      this.spawnEnemy(x, y, 1, LACKEY_CONFIG);
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2;
+      const x = centerX + Math.cos(angle) * spacing;
+      const y = centerY + Math.sin(angle) * spacing;
+      this.spawnMinion(x, y);
     }
   }
 
@@ -718,6 +960,14 @@ export class LevelScene extends Phaser.Scene {
       this.essenceDropper.drop(deadEnemy.x, deadEnemy.y, dropAmount, (treasure) => {
         this.treasures.push(treasure);
       });
+
+      // Drop a random gem (100% chance for now)
+      const gem = this.gemDropper.dropRandom(deadEnemy.x, deadEnemy.y, (worldGem) => {
+        this.worldGems.push(worldGem);
+      });
+      if (!gem) {
+        console.warn('No gems registered - cannot drop');
+      }
     });
 
     // Right-click on enemy = attack command for selected minions
@@ -729,28 +979,6 @@ export class LevelScene extends Phaser.Scene {
     });
 
     return enemy;
-  }
-
-  private spawnTargetDummy(x: number, y: number): TargetDummy {
-    const dummy = new TargetDummy(this, x, y, { maxHp: 100 });
-    this.targetDummies.push(dummy);
-
-    dummy.onDeath((deadDummy) => {
-      const index = this.targetDummies.indexOf(deadDummy);
-      if (index > -1) {
-        this.targetDummies.splice(index, 1);
-      }
-    });
-
-    // Right-click on dummy = attack command for selected minions
-    dummy.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
-      if (pointer.rightButtonDown()) {
-        this.commandAttack(dummy);
-        event.stopPropagation();
-      }
-    });
-
-    return dummy;
   }
 
   public getEventManager(): GameEventManager | undefined {

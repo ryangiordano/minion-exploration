@@ -7,6 +7,7 @@ import { LevelingSystem, UnitStatBars, defaultXpCurve, CombatXpTracker, LevelUpE
 import { Combatable, Attacker, AttackConfig, Selectable } from '../../../core/types/interfaces';
 import { AbilitySystem, GemOwner, AbilityGem } from '../../../core/abilities';
 import { minionMachine, MinionContext, MinionEvent, MinionState } from '../machines/minionMachine';
+import { GemSlotDisplay } from '../ui/GemSlotDisplay';
 
 const MINION_RADIUS = 14;
 export const MINION_VISUAL_RADIUS = 28;  // Scaled 2x for display
@@ -48,6 +49,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
   // Visual components
   private selectionCircle?: Phaser.GameObjects.Graphics;
   private statBars!: UnitStatBars;
+  private gemSlotDisplay!: GemSlotDisplay;
   private levelUpEffect!: LevelUpEffect;
   private floatingText!: FloatingText;
 
@@ -211,6 +213,9 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
       offsetY: STAT_BAR_OFFSET_Y,
       barHeight: 4,
     });
+
+    // Gem slot display (shows equipped gems below minion)
+    this.gemSlotDisplay = new GemSlotDisplay(scene);
   }
 
   // ============ Hop Animation ============
@@ -612,6 +617,9 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
       this.leveling.getXp(),
       this.leveling.getXpToNextLevel()
     );
+
+    // Update gem slot display
+    this.gemSlotDisplay.update(this.x, this.y, this.abilitySystem.getEquippedGems());
   }
 
   private showAttackEffect(target: Combatable): void {
@@ -642,6 +650,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
     this.hopTween?.stop();
     this.selectionCircle?.destroy();
     this.statBars.destroy();
+    this.gemSlotDisplay.destroy();
     this.levelUpEffect.destroy();
     super.destroy(fromScene);
   }
