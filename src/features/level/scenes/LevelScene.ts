@@ -5,6 +5,8 @@ import { Enemy, TargetDummy, LACKEY_CONFIG, BRUTE_CONFIG, EnemyTypeConfig } from
 import { CombatManager, CombatXpTracker, GameEventManager, EdgeScrollCamera, WhistleSelection, SelectionManager } from '../../../core/components';
 import { CurrencyDisplay } from '../ui/CurrencyDisplay';
 import { Combatable } from '../../../core/types/interfaces';
+import { UpgradeMenu, GemRegistryEntry } from '../../upgrade';
+import { AbilityGem } from '../../../core/abilities/types';
 
 // Visual feedback colors
 const CLICK_COLORS = {
@@ -36,6 +38,9 @@ export class LevelScene extends Phaser.Scene {
 
   // Loot
   private essenceDropper!: EssenceDropper;
+
+  // Upgrade menu
+  private upgradeMenu?: UpgradeMenu;
 
   constructor() {
     super({ key: 'LevelScene' });
@@ -106,7 +111,7 @@ export class LevelScene extends Phaser.Scene {
 
     // Add instructions
     const instructions = this.add.text(10, 10,
-      'Hold Space: Select | Left-click: Deselect | Right-click: Move/Attack | G: Grid lineup | E: Spawn | Edges: Pan',
+      'Hold Space: Select | Left-click: Deselect | Right-click: Move/Attack | G: Grid | U: Upgrade | E: Spawn | Edges: Pan',
       {
         fontSize: '12px',
         color: '#ffffff',
@@ -127,6 +132,9 @@ export class LevelScene extends Phaser.Scene {
 
     // Setup grid lineup key
     this.setupGridLineupControls();
+
+    // Setup upgrade controls
+    this.setupUpgradeControls();
   }
 
   update(_time: number, delta: number): void {
@@ -135,6 +143,9 @@ export class LevelScene extends Phaser.Scene {
 
     // Update whistle selection animation
     this.whistleSelection?.update(delta);
+
+    // Update upgrade menu (follows minion position)
+    this.upgradeMenu?.update();
 
     // Get active entities
     const activeMinions = this.minions.filter(m => !m.isDefeated());
@@ -369,6 +380,94 @@ export class LevelScene extends Phaser.Scene {
     });
   }
 
+  private setupUpgradeControls(): void {
+    // Initialize upgrade menu
+    this.upgradeMenu = new UpgradeMenu({
+      scene: this,
+      currencyDisplay: this.currencyDisplay,
+      onGemSelected: (gem, entry) => this.handleGemSelection(gem, entry),
+      onCancel: () => this.upgradeMenu?.close(),
+    });
+
+    // U key to open upgrade menu
+    const uKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.U);
+    uKey?.on('down', () => {
+      this.tryOpenUpgradeMenu();
+    });
+  }
+
+  private tryOpenUpgradeMenu(): void {
+    // Don't reopen if already open
+    if (this.upgradeMenu?.isOpen()) {
+      return;
+    }
+
+    // Only open if exactly 1 minion selected
+    const selected = this.getSelectedMinions();
+    if (selected.length !== 1) {
+      return;
+    }
+
+    this.upgradeMenu?.open(selected[0]);
+  }
+
+  private handleGemSelection(gem: AbilityGem, entry: GemRegistryEntry): void {
+    const targetMinion = this.upgradeMenu?.getTargetMinion();
+    if (!targetMinion) return;
+
+    // Deduct essence
+    if (!this.currencyDisplay.spend(entry.essenceCost)) {
+      return;
+    }
+
+    // Equip the gem (replaces existing if any)
+    targetMinion.equipGem(gem);
+
+    // Close menu
+    this.upgradeMenu?.close();
+
+    // Show equip feedback
+    this.showGemEquipEffect(targetMinion);
+  }
+
+  private showGemEquipEffect(minion: Minion): void {
+    // Quick pulse effect on the minion
+    this.tweens.add({
+      targets: minion,
+      scaleX: 2.3,
+      scaleY: 2.3,
+      duration: 100,
+      yoyo: true,
+      ease: 'Power2',
+    });
+
+    // Sparkle particles around minion
+    const particleCount = 8;
+    for (let i = 0; i < particleCount; i++) {
+      const angle = (i / particleCount) * Math.PI * 2;
+      const startDist = 10;
+      const endDist = 40;
+
+      const particle = this.add.circle(
+        minion.x + Math.cos(angle) * startDist,
+        minion.y + Math.sin(angle) * startDist,
+        4,
+        0xffcc00
+      );
+
+      this.tweens.add({
+        targets: particle,
+        x: minion.x + Math.cos(angle) * endDist,
+        y: minion.y + Math.sin(angle) * endDist,
+        alpha: 0,
+        scale: 0.3,
+        duration: 300,
+        ease: 'Power2',
+        onComplete: () => particle.destroy(),
+      });
+    }
+  }
+
   /** Arrange selected minions in a grid formation centered on the mouse position */
   private commandGridLineup(): void {
     const selectedMinions = this.getSelectedMinions();
@@ -515,6 +614,11 @@ export class LevelScene extends Phaser.Scene {
         this.minions.splice(index, 1);
       }
       this.selectionManager.removeFromSelection(minion);
+
+      // Close upgrade menu if this minion dies while menu is open for them
+      if (this.upgradeMenu?.isOpen() && this.upgradeMenu.getTargetMinion() === minion) {
+        this.upgradeMenu.close();
+      }
     });
 
     return minion;
