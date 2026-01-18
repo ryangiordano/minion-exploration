@@ -56,4 +56,3 @@ GemRegistry.register({
 export { GemRegistry } from './data/GemRegistry';
 export type { GemRegistryEntry } from './data/GemRegistry';
 export { GemCard } from './ui/GemCard';
-export { UpgradeMenu } from './ui/UpgradeMenu';
