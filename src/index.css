@@ -587,65 +587,75 @@ html, body, #root {
 
 .essence-segment.filled {
   background: linear-gradient(90deg, #ffd700 0%, #ffec80 50%, #ffd700 100%);
-  box-shadow: 0 0 3px rgba(255, 215, 0, 0.5);
+  box-shadow: 0 0 6px rgba(255, 215, 0, 0.7);
   position: relative;
+  overflow: visible;
 }
 
-/* Sparkle particles on filled segments */
+/* Bright sparkle effect on filled segments */
 .essence-segment.filled::after {
   content: '';
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.6) 50%,
-    transparent 100%
+  top: -2px;
+  left: -4px;
+  right: -4px;
+  bottom: -2px;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(255, 236, 128, 0.8) 30%,
+    transparent 70%
   );
-  animation: essence-shimmer 2s ease-in-out infinite;
+  animation: essence-sparkle 1.5s ease-in-out infinite;
   opacity: 0;
+  pointer-events: none;
 }
 
-/* Stagger the shimmer animation on different segments */
-.essence-segment.filled:nth-child(5n)::after {
+/* Stagger the sparkle animation on different segments */
+.essence-segment.filled:nth-child(7n)::after {
   animation-delay: 0s;
 }
-.essence-segment.filled:nth-child(5n+1)::after {
+.essence-segment.filled:nth-child(7n+1)::after {
+  animation-delay: 0.2s;
+}
+.essence-segment.filled:nth-child(7n+2)::after {
   animation-delay: 0.4s;
 }
-.essence-segment.filled:nth-child(5n+2)::after {
+.essence-segment.filled:nth-child(7n+3)::after {
+  animation-delay: 0.6s;
+}
+.essence-segment.filled:nth-child(7n+4)::after {
   animation-delay: 0.8s;
 }
-.essence-segment.filled:nth-child(5n+3)::after {
+.essence-segment.filled:nth-child(7n+5)::after {
+  animation-delay: 1.0s;
+}
+.essence-segment.filled:nth-child(7n+6)::after {
   animation-delay: 1.2s;
 }
-.essence-segment.filled:nth-child(5n+4)::after {
-  animation-delay: 1.6s;
-}
 
-@keyframes essence-shimmer {
+@keyframes essence-sparkle {
   0%, 100% {
     opacity: 0;
+    transform: scale(0.8);
   }
   50% {
     opacity: 1;
+    transform: scale(1.2);
   }
 }
 
 /* Ambient glow pulse on the whole bar */
 .essence-bar-vertical {
-  animation: essence-glow 3s ease-in-out infinite;
+  animation: essence-glow 2s ease-in-out infinite;
 }
 
 @keyframes essence-glow {
   0%, 100% {
-    box-shadow: 0 0 5px rgba(255, 215, 0, 0.2);
+    box-shadow: 0 0 8px rgba(255, 215, 0, 0.3);
   }
   50% {
-    box-shadow: 0 0 12px rgba(255, 215, 0, 0.4);
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.6);
   }
 }
 
