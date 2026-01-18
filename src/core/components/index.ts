@@ -18,3 +18,4 @@ export { CursorTarget } from './CursorTarget';
 export { DestinationIndicator, type DestinationIndicatorConfig } from './DestinationIndicator';
 export { DebuffManager, type DebuffType, type ActiveDebuff, type DebuffVisual, type DebuffVisualFactory } from './DebuffManager';
 export { StunVisual, createDebuffVisual } from './StunVisual';
+export { CollectionPulse, type CollectionPulseConfig, type PulseEmitter } from './CollectionPulse';

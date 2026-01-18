@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { Minion, MINION_VISUAL_RADIUS } from '../../minions';
 import { Treasure, EssenceDropper } from '../../treasure';
 import { Enemy, EnemyTypeConfig } from '../../enemies';
-import { CombatManager, CombatXpTracker, GameEventManager, EdgeScrollCamera, EdgeScrollIndicator, SelectionManager } from '../../../core/components';
+import { CombatManager, CombatXpTracker, GameEventManager, EdgeScrollCamera, EdgeScrollIndicator, SelectionManager, CollectionPulse } from '../../../core/components';
 import { TickSystem } from '../../../core/systems';
 import { CurrencyDisplay } from '../ui/CurrencyDisplay';
 import { FloorDisplay } from '../ui/FloorDisplay';
@@ -48,6 +48,7 @@ export class LevelScene extends Phaser.Scene {
   // Collection systems
   private treasureCollection = new CollectionSystem<Treasure>();
   private gemCollection = new CollectionSystem<WorldGem>();
+  private collectionPulse!: CollectionPulse;
 
   // Inventory
   private inventory = new InventoryState();
@@ -167,6 +168,9 @@ export class LevelScene extends Phaser.Scene {
     // Setup collection system callbacks
     this.setupCollectionSystems();
 
+    // Setup collection pulse (spacebar to expand collection radius from selected minions)
+    this.setupCollectionPulse();
+
     // Setup spawn minion key
     this.setupSpawnControls();
 
@@ -230,6 +234,9 @@ export class LevelScene extends Phaser.Scene {
     // Check for collections
     this.treasureCollection.update(activeMinions);
     this.gemCollection.update(activeMinions);
+
+    // Update collection pulse (spacebar to expand collection radius)
+    this.collectionPulse.update(delta);
 
     // Check win/lose conditions (only if not already transitioning)
     if (!this.isTransitioning) {
@@ -301,6 +308,42 @@ export class LevelScene extends Phaser.Scene {
         this.showGemPickupEffect(x, y, gemId);
       }
     });
+  }
+
+  private setupCollectionPulse(): void {
+    this.collectionPulse = new CollectionPulse(this, {
+      maxRadius: 225,
+      growRate: 400,
+      color: 0x88ccff,
+    });
+
+    this.collectionPulse
+      .bindKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
+      .setEmitterSource(() => this.minions.filter(m => m.isSelected() && !m.isDefeated()))
+      .setCollectibleSource(() => [
+        ...this.treasureCollection.getItems(),
+        ...this.gemCollection.getItems(),
+      ])
+      .onCollect((item) => {
+        const x = item.x;
+        const y = item.y;
+
+        // Handle treasure
+        if (item instanceof Treasure) {
+          item.collect();
+          this.treasureCollection.remove(item as Treasure);
+          this.showCollectEffect(x, y);
+        }
+        // Handle gems
+        else if (item instanceof WorldGem) {
+          const gemId = (item as WorldGem).collect();
+          if (gemId) {
+            this.gemCollection.remove(item as WorldGem);
+            this.inventory.addGem(gemId);
+            this.showGemPickupEffect(x, y, gemId);
+          }
+        }
+      });
   }
 
   private showGemPickupEffect(x: number, y: number, gemId: string): void {
