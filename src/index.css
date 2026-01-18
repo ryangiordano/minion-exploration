@@ -206,6 +206,34 @@ html, body, #root {
 .stat-bar-fill {
   height: 100%;
   transition: width 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Sheen effect that travels up the bar */
+.stat-bar-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.4) 50%,
+    transparent 100%
+  );
+  animation: stat-bar-sheen 3s ease-in-out infinite;
+}
+
+@keyframes stat-bar-sheen {
+  0% {
+    left: -50%;
+  }
+  40%, 100% {
+    left: 150%;
+  }
 }
 
 .stat-bar-value {
