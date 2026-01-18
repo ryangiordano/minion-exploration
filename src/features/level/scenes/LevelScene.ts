@@ -6,14 +6,15 @@ import { CombatManager, CombatXpTracker, GameEventManager, EdgeScrollCamera, Edg
 import { CurrencyDisplay } from '../ui/CurrencyDisplay';
 import { FloorDisplay } from '../ui/FloorDisplay';
 import { PartyDisplay } from '../ui/PartyDisplay';
-import { UpgradeMenu, GemRegistry } from '../../upgrade';
-import { AbilityGem } from '../../../core/abilities/types';
+import { GemRegistry } from '../../upgrade';
 import { WorldGem, GemDropper, InventoryState, getGemVisual, InventoryModal, GemEquipmentSystem } from '../../inventory';
 import { GameState, PartyManager } from '../../../core/game-state';
 import { LevelGenerator, LevelData } from '../../../core/level-generation';
 import { FloorTransition, DefeatTransition } from '../../../core/floor-transition';
 import { Vfx, TargetingIndicator } from '../../../core/vfx';
 import { CollectionSystem, CommandSystem } from '../systems';
+import { gameStore } from '../../../ui/store/gameStore';
+import { minionsToState, inventoryToGemState } from '../../../ui/store/stateHelpers';
 
 export class LevelScene extends Phaser.Scene {
   private minions: Minion[] = [];
@@ -51,8 +52,7 @@ export class LevelScene extends Phaser.Scene {
   private inventoryModal?: InventoryModal;
   private gemEquipment!: GemEquipmentSystem;
 
-  // Upgrade menu
-  private upgradeMenu?: UpgradeMenu;
+  // Upgrade menu is now managed via React UI store (gameStore)
 
   // Visual effects
   private vfx!: Vfx;
@@ -181,6 +181,9 @@ export class LevelScene extends Phaser.Scene {
 
     // Setup move command mode (A key)
     this.setupMoveCommandControls();
+
+    // Initial sync of game state to React UI store
+    this.syncGameStoreState();
   }
 
   update(_time: number, delta: number): void {
@@ -198,8 +201,7 @@ export class LevelScene extends Phaser.Scene {
     );
 
 
-    // Update upgrade menu (follows minion position)
-    this.upgradeMenu?.update();
+    // React upgrade menu is static (centered), no position update needed
 
     // Update party display
     this.partyDisplay.update();
@@ -353,6 +355,7 @@ export class LevelScene extends Phaser.Scene {
 
       if (this.currencyDisplay.spend(this.MINION_COST)) {
         this.spawnMinion(pointer.worldX, pointer.worldY);
+        this.syncGameStoreState();
       }
     });
   }
@@ -366,28 +369,70 @@ export class LevelScene extends Phaser.Scene {
   }
 
   private setupUpgradeControls(): void {
-    // Initialize upgrade menu with inventory integration
-    this.upgradeMenu = new UpgradeMenu({
-      scene: this,
-      currencyDisplay: this.currencyDisplay,
-      inventory: this.inventory,
-      onGemSelected: (gem) => this.handleGemSelectionFromInventory(gem),
-      onInventoryGemEquipped: (inventoryGem) => {
-        // Remove the gem from inventory when equipped
-        this.inventory.removeGem(inventoryGem.instanceId);
-      },
-      onGemRemoved: (minion, slot, gemId) => {
-        // Remove the gem (destroys it)
-        minion.removeGem(slot);
+    // Register command handlers with the React UI store
+    gameStore.getState().registerCommandHandlers({
+      onEquipGem: (minionId: string, gemId: string) => {
+        const minion = this.getMinionById(minionId);
+        if (!minion) return;
+
+        // Find the inventory gem and create the ability gem
+        const inventoryGem = this.inventory.getGems().find(g => g.gemId === gemId);
+        if (!inventoryGem) return;
+
         const entry = GemRegistry.get(gemId);
-        this.vfx.text.show(minion.x, minion.y - 40, `${entry?.name ?? 'Gem'} destroyed`, {
-          color: '#ff6666',
-          bold: true,
-        });
+        if (!entry) return;
+
+        // Check cost
+        const cost = entry.essenceCost;
+        if (!this.currencyDisplay.canAfford(cost)) {
+          this.vfx.text.show(minion.x, minion.y - 40, `Need ${cost} essence!`, {
+            color: '#ff6666',
+            bold: true,
+          });
+          return;
+        }
+
+        // Spend essence and equip
+        this.currencyDisplay.spend(cost);
+        const gem = entry.createGem();
+        minion.equipGem(gem);
+
+        // Remove from inventory
+        this.inventory.removeGem(inventoryGem.instanceId);
+
+        // Show effect and sync state
+        this.showGemEquipEffect(minion);
+        this.syncGameStoreState();
       },
-      onRepair: (minion) => this.repairMinion(minion),
-      repairCost: this.REPAIR_COST,
-      onCancel: () => this.upgradeMenu?.close(),
+
+      onRemoveGem: (minionId: string, slot: number) => {
+        const minion = this.getMinionById(minionId);
+        if (!minion) return;
+
+        const gems = minion.getAbilitySystem().getEquippedGems();
+        const gem = gems[slot];
+        const gemId = gem?.id;
+
+        minion.removeGem(slot);
+
+        if (gemId) {
+          const entry = GemRegistry.get(gemId);
+          this.vfx.text.show(minion.x, minion.y - 40, `${entry?.name ?? 'Gem'} destroyed`, {
+            color: '#ff6666',
+            bold: true,
+          });
+        }
+
+        this.syncGameStoreState();
+      },
+
+      onRepairMinion: (minionId: string) => {
+        const minion = this.getMinionById(minionId);
+        if (!minion) return;
+
+        this.repairMinion(minion);
+        this.syncGameStoreState();
+      },
     });
 
     // U key to open upgrade menu
@@ -395,6 +440,20 @@ export class LevelScene extends Phaser.Scene {
     uKey?.on('down', () => {
       this.tryOpenUpgradeMenu();
     });
+  }
+
+  /** Find a minion by its store ID (e.g., "minion-0") */
+  private getMinionById(id: string): Minion | undefined {
+    const index = parseInt(id.replace('minion-', ''), 10);
+    return this.minions[index];
+  }
+
+  /** Sync current game state to the React UI store */
+  private syncGameStoreState(): void {
+    const store = gameStore.getState();
+    store.setMinions(minionsToState(this.minions));
+    store.setInventoryGems(inventoryToGemState(this.inventory));
+    store.setPlayerEssence(this.currencyDisplay.getAmount());
   }
 
   private setupInventoryControls(): void {
@@ -457,8 +516,10 @@ export class LevelScene extends Phaser.Scene {
   }
 
   private tryOpenUpgradeMenu(): void {
+    const store = gameStore.getState();
+
     // Don't reopen if already open
-    if (this.upgradeMenu?.isOpen()) {
+    if (store.activeMenu === 'upgrade') {
       return;
     }
 
@@ -468,22 +529,14 @@ export class LevelScene extends Phaser.Scene {
       return;
     }
 
-    this.upgradeMenu?.open(selected[0]);
-  }
+    // Sync state and open menu
+    this.syncGameStoreState();
 
-  /** Handle equipping a gem from inventory (no cost) */
-  private handleGemSelectionFromInventory(gem: AbilityGem): void {
-    const targetMinion = this.upgradeMenu?.getTargetMinion();
-    if (!targetMinion) return;
-
-    // Equip the gem (replaces existing if any)
-    targetMinion.equipGem(gem);
-
-    // Close menu
-    this.upgradeMenu?.close();
-
-    // Show equip feedback
-    this.showGemEquipEffect(targetMinion);
+    // Find the minion's store ID
+    const minionIndex = this.minions.indexOf(selected[0]);
+    if (minionIndex >= 0) {
+      store.openUpgradeMenu(`minion-${minionIndex}`);
+    }
   }
 
   private showGemEquipEffect(minion: Minion): void {
@@ -615,8 +668,10 @@ export class LevelScene extends Phaser.Scene {
       this.dropGemsAtLocation(minion.x, minion.y, droppedGemIds);
 
       // Close upgrade menu if this minion dies while menu is open for them
-      if (this.upgradeMenu?.isOpen() && this.upgradeMenu.getTargetMinion() === minion) {
-        this.upgradeMenu.close();
+      const store = gameStore.getState();
+      const minionIndex = this.minions.indexOf(minion);
+      if (store.activeMenu === 'upgrade' && store.selectedMinionId === `minion-${minionIndex}`) {
+        store.closeMenu();
       }
     });
 

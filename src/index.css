@@ -71,3 +71,308 @@ html, body, #root {
 .placeholder-menu button:hover {
   background: #66ff66;
 }
+
+/* ===========================================
+   Upgrade Menu Layout
+   =========================================== */
+
+.upgrade-menu {
+  display: flex;
+  gap: 8px;
+  font-family: Arial, sans-serif;
+}
+
+/* ===========================================
+   Panel Component
+   =========================================== */
+
+.panel {
+  background: rgba(26, 26, 46, 0.95);
+  border: 2px solid #4a4a6a;
+  border-radius: 8px;
+  padding: 16px;
+  color: #ffffff;
+}
+
+.panel-header {
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.panel-title {
+  font-size: 14px;
+  font-weight: bold;
+  color: #ffffff;
+}
+
+.panel-divider {
+  height: 1px;
+  background: #3a3a5a;
+  opacity: 0.5;
+  margin: 8px 0;
+}
+
+.panel-content {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===========================================
+   Section Component
+   =========================================== */
+
+.panel-section {
+  margin-bottom: 4px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.section-title {
+  font-size: 10px;
+  color: #aaaaaa;
+  text-transform: uppercase;
+}
+
+.section-right {
+  display: flex;
+  align-items: center;
+}
+
+.section-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ===========================================
+   Text Styles
+   =========================================== */
+
+.empty-text {
+  font-size: 10px;
+  color: #666666;
+  font-style: italic;
+  padding: 4px 0;
+}
+
+.hint-text {
+  font-size: 9px;
+  color: #666666;
+  text-align: center;
+  margin-top: 8px;
+}
+
+/* ===========================================
+   Stat Bar Component
+   =========================================== */
+
+.stat-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.stat-bar-label {
+  font-size: 9px;
+  color: #888888;
+  width: 24px;
+  flex-shrink: 0;
+}
+
+.stat-bar-track {
+  flex: 1;
+  height: 8px;
+  background: #333333;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.stat-bar-fill {
+  height: 100%;
+  transition: width 0.2s ease;
+}
+
+.stat-bar-value {
+  font-size: 8px;
+  width: 45px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ===========================================
+   Stat Line Component
+   =========================================== */
+
+.stat-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 0;
+}
+
+.stat-line-label {
+  font-size: 10px;
+  color: #888888;
+}
+
+.stat-line-value {
+  font-size: 10px;
+}
+
+/* ===========================================
+   Button Components
+   =========================================== */
+
+.btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 11px;
+  transition: background-color 0.15s ease;
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.btn-primary {
+  background: #44ff44;
+  color: #000000;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #66ff66;
+}
+
+.btn-danger {
+  background: #ff4444;
+  color: #ffffff;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #ff6666;
+}
+
+.btn-text {
+  background: none;
+  border: none;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 9px;
+  transition: filter 0.15s ease;
+}
+
+.btn-text:hover {
+  filter: brightness(1.3);
+}
+
+/* ===========================================
+   Gem Row Component
+   =========================================== */
+
+.gem-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.gem-row-disabled {
+  opacity: 0.6;
+}
+
+.gem-row-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.gem-row-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.gem-row-name {
+  font-size: 11px;
+  font-weight: bold;
+  color: #cccccc;
+}
+
+.gem-row-name.disabled {
+  color: #666666;
+}
+
+.gem-row-cost {
+  font-size: 10px;
+  font-weight: bold;
+  color: #ffd700;
+  background: rgba(74, 58, 0, 1);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.gem-row-cost.disabled {
+  color: #666666;
+  background: #333333;
+}
+
+.gem-row-desc {
+  font-size: 9px;
+  color: #666666;
+  display: block;
+  line-height: 1.3;
+}
+
+/* ===========================================
+   Pagination Component
+   =========================================== */
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pagination-btn {
+  background: none;
+  border: none;
+  color: #cccccc;
+  font-size: 10px;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.pagination-btn:disabled {
+  color: #666666;
+  cursor: not-allowed;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  color: #ffffff;
+}
+
+.pagination-text {
+  font-size: 10px;
+  color: #aaaaaa;
+}
+
+/* ===========================================
+   Repair Section
+   =========================================== */
+
+.repair-section {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0;
+}
