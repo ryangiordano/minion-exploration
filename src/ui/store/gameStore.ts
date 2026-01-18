@@ -14,6 +14,7 @@ interface GameStore {
 
   // Actions - UI control
   openUpgradeMenu: (minionId: string) => void;
+  openInventory: () => void;
   closeMenu: () => void;
   pause: () => void;
   resume: () => void;
@@ -60,6 +61,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   openUpgradeMenu: (minionId) => set({
     activeMenu: 'upgrade',
     selectedMinionId: minionId,
+    isPaused: true
+  }),
+
+  openInventory: () => set({
+    activeMenu: 'inventory',
     isPaused: true
   }),
 

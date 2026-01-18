@@ -1,7 +1,8 @@
 import { AbilityGem, AttackHitContext } from '../types';
+import { DebuffType } from '../../components';
 
 const DEFAULT_STUN_CHANCE = 0.25; // 25% chance to stun
-const DEFAULT_STUN_DURATION_MS = 2000; // 2 seconds
+const DEFAULT_STUN_TICKS = 4; // 4 ticks = 2 seconds
 
 /**
  * Attack modifier gem that has a chance to stun enemies on hit.
@@ -13,11 +14,11 @@ export class StunGem implements AbilityGem {
   readonly description = 'Attacks have a chance to stun enemies';
 
   private readonly stunChance: number;
-  private readonly stunDurationMs: number;
+  private readonly stunTicks: number;
 
-  constructor(stunChance: number = DEFAULT_STUN_CHANCE, stunDurationMs: number = DEFAULT_STUN_DURATION_MS) {
+  constructor(stunChance: number = DEFAULT_STUN_CHANCE, stunTicks: number = DEFAULT_STUN_TICKS) {
     this.stunChance = stunChance;
-    this.stunDurationMs = stunDurationMs;
+    this.stunTicks = stunTicks;
   }
 
   onAttackHit(context: AttackHitContext): void {
@@ -27,9 +28,9 @@ export class StunGem implements AbilityGem {
     }
 
     // Apply stun debuff if target supports it
-    const target = context.target as { applyDebuff?: (type: 'stun' | 'slow', durationMs: number) => void };
+    const target = context.target as { applyDebuff?: (type: DebuffType, ticks: number) => void };
     if (target.applyDebuff) {
-      target.applyDebuff('stun', this.stunDurationMs);
+      target.applyDebuff('stun', this.stunTicks);
     }
   }
 }

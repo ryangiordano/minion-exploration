@@ -2,6 +2,7 @@
 import { GemRegistry } from './data/GemRegistry';
 import { VitalityGem } from '../../core/abilities/gems/VitalityGem';
 import { StunGem } from '../../core/abilities/gems/StunGem';
+import { PoisonGem } from '../../core/abilities/gems/PoisonGem';
 import { RangedAttackGem } from '../../core/abilities/gems/RangedAttackGem';
 import { HealPulseGem } from '../../core/abilities/gems/HealPulseGem';
 import { LifestealGem } from '../../core/abilities/gems/LifestealGem';
@@ -23,6 +24,15 @@ GemRegistry.register({
   essenceCost: 20,
   gemType: 'passive',
   createGem: () => new StunGem(),
+});
+
+GemRegistry.register({
+  id: 'poison',
+  name: 'Poison Gem',
+  description: '35% chance to poison enemies (2 dmg/tick for 3s)',
+  essenceCost: 25,
+  gemType: 'passive',
+  createGem: () => new PoisonGem(),
 });
 
 GemRegistry.register({

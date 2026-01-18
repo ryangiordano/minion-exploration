@@ -3,7 +3,7 @@ import { createActor, Actor } from 'xstate';
 import { TargetedMovement } from '../../../core/components/TargetedMovement';
 import { AttackBehavior, AttackUpdateContext } from '../../../core/components/AttackBehavior';
 import { CombatManager } from '../../../core/components/CombatManager';
-import { LevelingSystem, UnitStatBars, defaultXpCurve, CombatXpTracker, LevelUpEffect, FloatingText, DestinationIndicator, DebuffManager, createDebuffVisual } from '../../../core/components';
+import { LevelingSystem, UnitStatBars, defaultXpCurve, CombatXpTracker, LevelUpEffect, FloatingText, DestinationIndicator, DebuffManager, DebuffType, createDebuffVisual } from '../../../core/components';
 import { Combatable, Attacker, AttackConfig, Selectable } from '../../../core/types/interfaces';
 import { AbilitySystem, GemOwner, AbilityGem } from '../../../core/abilities';
 import { minionMachine, MinionContext, MinionEvent, MinionState } from '../machines/minionMachine';
@@ -225,8 +225,9 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
     // Destination indicator (shows line to move destination)
     this.destinationIndicator = new DestinationIndicator(scene);
 
-    // Debuff system
-    this.debuffs = new DebuffManager(scene, createDebuffVisual);
+    // Debuff system (entityId used for tick system registration)
+    const entityId = `minion-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    this.debuffs = new DebuffManager(scene, entityId, { visualFactory: createDebuffVisual });
   }
 
   // ============ Hop Animation ============
@@ -499,7 +500,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
     this.updateStatBars();
     this.abilitySystem.update(delta);
     this.destinationIndicator.update(this.x, this.y);
-    this.debuffs.update(delta, this.x, this.y);
+    this.debuffs.update(this.x, this.y);
 
     // If stunned, skip all behavior (can't move or attack)
     if (this.debuffs.isStunned()) {
@@ -699,10 +700,11 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
   }
 
   /**
-   * Apply a debuff to this minion
+   * Apply a debuff to this minion.
+   * Duration is in ticks (1 tick = 500ms).
    */
-  public applyDebuff(type: 'stun' | 'slow', durationMs: number): void {
-    this.debuffs.apply(type, durationMs);
+  public applyDebuff(type: DebuffType, ticks: number, onTick?: () => void): void {
+    this.debuffs.apply(type, ticks, onTick);
   }
 
   destroy(fromScene?: boolean): void {

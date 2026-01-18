@@ -1,13 +1,16 @@
 import Phaser from 'phaser';
+import { TickSystem } from '../systems';
 
 /** Supported debuff types */
-export type DebuffType = 'stun' | 'slow';
+export type DebuffType = 'stun' | 'slow' | 'poison';
 
 /** A single active debuff instance */
 export interface ActiveDebuff {
   type: DebuffType;
-  remainingMs: number;
-  durationMs: number;
+  ticksRemaining: number;
+  totalTicks: number;
+  /** Optional callback fired each tick (for DOTs) */
+  onTick?: () => void;
 }
 
 /** Visual effect interface for debuff rendering */
@@ -24,37 +27,72 @@ export type DebuffVisualFactory = (
 
 /**
  * Manages active debuffs on an entity.
- * Tracks durations, provides query methods, and handles visual effects.
+ * Integrates with TickSystem for timing - debuff durations are in ticks (500ms each).
  */
 export class DebuffManager {
   private debuffs: Map<DebuffType, ActiveDebuff> = new Map();
   private visuals: Map<DebuffType, DebuffVisual> = new Map();
   private scene: Phaser.Scene;
   private visualFactory?: DebuffVisualFactory;
+  private tickSystem?: TickSystem;
+  private entityId: string;
 
-  constructor(scene: Phaser.Scene, visualFactory?: DebuffVisualFactory) {
+  constructor(
+    scene: Phaser.Scene,
+    entityId: string,
+    options?: {
+      visualFactory?: DebuffVisualFactory;
+      tickSystem?: TickSystem;
+    }
+  ) {
     this.scene = scene;
-    this.visualFactory = visualFactory;
+    this.entityId = entityId;
+    this.visualFactory = options?.visualFactory;
+    this.tickSystem = options?.tickSystem;
+  }
+
+  /** Set the tick system (can be set after construction) */
+  setTickSystem(tickSystem: TickSystem): void {
+    this.tickSystem = tickSystem;
   }
 
   /**
    * Apply a debuff to this entity.
+   * Duration is in ticks (1 tick = 500ms).
    * If already applied, refreshes the duration to the longer of the two.
    */
-  apply(type: DebuffType, durationMs: number): void {
+  apply(type: DebuffType, ticks: number, onTick?: () => void): void {
     const existing = this.debuffs.get(type);
 
     if (existing) {
       // Refresh duration (take the longer one)
-      existing.remainingMs = Math.max(existing.remainingMs, durationMs);
-      existing.durationMs = Math.max(existing.durationMs, durationMs);
+      existing.ticksRemaining = Math.max(existing.ticksRemaining, ticks);
+      existing.totalTicks = Math.max(existing.totalTicks, ticks);
+      // Update onTick callback if provided
+      if (onTick) {
+        existing.onTick = onTick;
+      }
     } else {
       // New debuff
-      this.debuffs.set(type, {
+      const debuff: ActiveDebuff = {
         type,
-        remainingMs: durationMs,
-        durationMs,
-      });
+        ticksRemaining: ticks,
+        totalTicks: ticks,
+        onTick,
+      };
+      this.debuffs.set(type, debuff);
+
+      // Register with tick system if available
+      if (this.tickSystem) {
+        const effectId = this.getEffectId(type);
+        this.tickSystem.register({
+          id: effectId,
+          target: this,
+          ticksRemaining: ticks,
+          onTick: () => this.handleTick(type),
+          onExpire: () => this.remove(type),
+        });
+      }
 
       // Create visual if factory exists
       if (this.visualFactory) {
@@ -66,11 +104,36 @@ export class DebuffManager {
     }
   }
 
+  /** Generate unique effect ID for tick system registration */
+  private getEffectId(type: DebuffType): string {
+    return `debuff-${this.entityId}-${type}`;
+  }
+
+  /** Handle a tick for a specific debuff type */
+  private handleTick(type: DebuffType): void {
+    const debuff = this.debuffs.get(type);
+    if (!debuff) return;
+
+    // Call onTick callback if present (for DOTs)
+    if (debuff.onTick) {
+      debuff.onTick();
+    }
+
+    // Decrement local counter (tick system handles removal via onExpire)
+    debuff.ticksRemaining--;
+  }
+
   /**
    * Remove a specific debuff immediately
    */
   remove(type: DebuffType): void {
     this.debuffs.delete(type);
+
+    // Unregister from tick system
+    if (this.tickSystem) {
+      this.tickSystem.unregister(this.getEffectId(type));
+    }
+
     const visual = this.visuals.get(type);
     if (visual) {
       visual.destroy();
@@ -82,6 +145,13 @@ export class DebuffManager {
    * Clear all debuffs
    */
   clearAll(): void {
+    // Unregister all from tick system
+    if (this.tickSystem) {
+      this.debuffs.forEach((_, type) => {
+        this.tickSystem!.unregister(this.getEffectId(type));
+      });
+    }
+
     this.debuffs.clear();
     this.visuals.forEach((visual) => visual.destroy());
     this.visuals.clear();
@@ -112,30 +182,17 @@ export class DebuffManager {
   }
 
   /**
-   * Get remaining duration of a debuff in ms (0 if not active)
+   * Get remaining ticks of a debuff (0 if not active)
    */
-  getRemainingDuration(type: DebuffType): number {
-    return this.debuffs.get(type)?.remainingMs ?? 0;
+  getRemainingTicks(type: DebuffType): number {
+    return this.debuffs.get(type)?.ticksRemaining ?? 0;
   }
 
   /**
-   * Update debuff timers and visuals. Call each frame.
+   * Update visual positions. Call each frame.
+   * Note: Tick countdown is now handled by TickSystem, not here.
    */
-  update(delta: number, x: number, y: number): void {
-    const expired: DebuffType[] = [];
-
-    this.debuffs.forEach((debuff, type) => {
-      debuff.remainingMs -= delta;
-      if (debuff.remainingMs <= 0) {
-        expired.push(type);
-      }
-    });
-
-    // Remove expired debuffs
-    for (const type of expired) {
-      this.remove(type);
-    }
-
+  update(x: number, y: number): void {
     // Update visual positions
     this.visuals.forEach((visual) => {
       visual.update(x, y);
@@ -143,7 +200,7 @@ export class DebuffManager {
   }
 
   /**
-   * Clean up all visuals
+   * Clean up all visuals and unregister from tick system
    */
   destroy(): void {
     this.clearAll();

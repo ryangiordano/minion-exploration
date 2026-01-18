@@ -376,3 +376,170 @@ html, body, #root {
   justify-content: center;
   padding: 8px 0;
 }
+
+/* ===========================================
+   Inventory Modal
+   =========================================== */
+
+.inventory-modal {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.inventory-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 99;
+}
+
+.inventory-panel {
+  position: relative;
+  z-index: 100;
+  width: 300px;
+  min-height: 400px;
+}
+
+.inventory-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.inventory-instructions {
+  font-size: 11px;
+  color: #aaaaaa;
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.inventory-grid {
+  min-height: 150px;
+  margin-bottom: 12px;
+}
+
+.inventory-row {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.inventory-slot {
+  width: 40px;
+  height: 40px;
+  background: #444444;
+  border: 2px solid #666666;
+  border-radius: 4px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.inventory-slot:hover {
+  background: #555555;
+}
+
+.inventory-slot.selected {
+  background: #666688;
+  border-color: #8888ff;
+}
+
+.inventory-selection-info {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+.selection-gem-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.selection-gem-name {
+  font-size: 12px;
+  font-weight: bold;
+  color: #cccccc;
+}
+
+.selection-gem-desc {
+  font-size: 10px;
+  color: #888888;
+  display: block;
+}
+
+.selection-warning {
+  font-size: 10px;
+  color: #ff6666;
+  margin-top: 4px;
+}
+
+.inventory-minions {
+  margin-bottom: 12px;
+}
+
+.minion-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.minion-select-btn {
+  background: #3a3a5a;
+  border: 2px solid #4a4a6a;
+  border-radius: 4px;
+  padding: 8px 12px;
+  color: #cccccc;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  transition: all 0.15s ease;
+}
+
+.minion-select-btn:hover:not(.disabled) {
+  background: #4a4a6a;
+  border-color: #6a6a8a;
+}
+
+.minion-select-btn.selected {
+  background: #4a6a4a;
+  border-color: #6a8a6a;
+}
+
+.minion-select-btn.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.minion-hp {
+  font-size: 9px;
+  color: #888888;
+}
+
+.inventory-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
+  border-top: 1px solid #3a3a5a;
+}
+
+.essence-display {
+  font-size: 12px;
+  font-weight: bold;
+  color: #ffd700;
+}

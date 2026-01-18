@@ -8,11 +8,3 @@ export { InventoryState } from './data/InventoryState';
 export type { InventoryGem } from './data/InventoryState';
 export { getGemVisual, GEM_VISUALS, DEFAULT_GEM_COLOR } from './data/GemConfig';
 export type { GemVisualConfig } from './data/GemConfig';
-
-// Systems
-export { GemEquipmentSystem } from './systems';
-export type { GemEquippable, GemEquipmentSystemConfig } from './systems';
-
-// UI
-export { InventoryModal } from './ui/InventoryModal';
-export type { InventoryModalConfig } from './ui/InventoryModal';

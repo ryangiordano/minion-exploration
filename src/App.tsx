@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { PhaserGame, PhaserGameRef } from './ui/PhaserGame';
 import { UpgradeMenu } from './ui/screens/UpgradeMenu';
+import { InventoryModal } from './ui/screens/InventoryModal';
 import { useGameStore } from './ui/store/gameStore';
 import './index.css';
 
@@ -16,6 +17,7 @@ export function App() {
       {/* React UI overlay - menus render here */}
       <div className="ui-overlay">
         {activeMenu === 'upgrade' && <UpgradeMenu />}
+        {activeMenu === 'inventory' && <InventoryModal />}
         {activeMenu === 'pause' && (
           <div className="placeholder-menu">
             <p>Pause Menu (React) - Coming Soon</p>

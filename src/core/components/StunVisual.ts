@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { DebuffVisual } from './DebuffManager';
+import { DebuffVisual, DebuffType } from './DebuffManager';
 
 const NUM_CIRCLES = 3;
 const CIRCLE_RADIUS = 3;
@@ -68,7 +68,7 @@ export class StunVisual implements DebuffVisual {
  */
 export function createDebuffVisual(
   scene: Phaser.Scene,
-  type: 'stun' | 'slow'
+  type: DebuffType
 ): DebuffVisual | null {
   switch (type) {
     case 'stun':
@@ -76,7 +76,66 @@ export function createDebuffVisual(
     case 'slow':
       // Could add a slow visual later (e.g., blue tint, frost particles)
       return null;
+    case 'poison':
+      return new PoisonVisual(scene);
     default:
       return null;
+  }
+}
+
+const POISON_VERTICAL_OFFSET = -10;
+
+/**
+ * Visual effect for poison: green bubbles rising from the entity
+ */
+export class PoisonVisual implements DebuffVisual {
+  private container: Phaser.GameObjects.Container;
+  private scene: Phaser.Scene;
+  private spawnTimer?: Phaser.Time.TimerEvent;
+
+  constructor(scene: Phaser.Scene) {
+    this.scene = scene;
+    this.container = scene.add.container(0, 0);
+    this.container.setDepth(100);
+
+    // Spawn bubbles periodically
+    this.spawnTimer = scene.time.addEvent({
+      delay: 300,
+      callback: () => this.spawnBubble(),
+      loop: true,
+    });
+
+    // Spawn a few initial bubbles
+    for (let i = 0; i < 3; i++) {
+      this.spawnBubble();
+    }
+  }
+
+  private spawnBubble(): void {
+    const x = Phaser.Math.Between(-12, 12);
+    const startY = Phaser.Math.Between(-5, 5);
+    const size = Phaser.Math.Between(2, 4);
+
+    const bubble = this.scene.add.circle(x, startY, size, 0x44ff44, 0.7);
+    this.container.add(bubble);
+
+    // Float up and fade out
+    this.scene.tweens.add({
+      targets: bubble,
+      y: startY - 25,
+      alpha: 0,
+      duration: 800 + Math.random() * 400,
+      ease: 'Quad.easeOut',
+      onComplete: () => bubble.destroy(),
+    });
+  }
+
+  update(x: number, y: number): void {
+    this.container.setPosition(x, y + POISON_VERTICAL_OFFSET);
+  }
+
+  destroy(): void {
+    this.spawnTimer?.destroy();
+    this.container.destroy();
   }
 }

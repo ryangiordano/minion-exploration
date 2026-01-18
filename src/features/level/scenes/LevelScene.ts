@@ -3,11 +3,12 @@ import { Minion, MINION_VISUAL_RADIUS } from '../../minions';
 import { Treasure, EssenceDropper } from '../../treasure';
 import { Enemy, EnemyTypeConfig } from '../../enemies';
 import { CombatManager, CombatXpTracker, GameEventManager, EdgeScrollCamera, EdgeScrollIndicator, SelectionManager } from '../../../core/components';
+import { TickSystem } from '../../../core/systems';
 import { CurrencyDisplay } from '../ui/CurrencyDisplay';
 import { FloorDisplay } from '../ui/FloorDisplay';
 import { PartyDisplay } from '../ui/PartyDisplay';
 import { GemRegistry } from '../../upgrade';
-import { WorldGem, GemDropper, InventoryState, getGemVisual, InventoryModal, GemEquipmentSystem } from '../../inventory';
+import { WorldGem, GemDropper, InventoryState, getGemVisual } from '../../inventory';
 import { GameState, PartyManager } from '../../../core/game-state';
 import { LevelGenerator, LevelData } from '../../../core/level-generation';
 import { FloorTransition, DefeatTransition } from '../../../core/floor-transition';
@@ -21,6 +22,7 @@ export class LevelScene extends Phaser.Scene {
   private enemies: Enemy[] = [];
   private combatManager = new CombatManager();
   private xpTracker = new CombatXpTracker({ baseXpPerKill: 10 });
+  private tickSystem = new TickSystem();
   private eventManager?: GameEventManager;
 
   // Camera control
@@ -49,8 +51,6 @@ export class LevelScene extends Phaser.Scene {
 
   // Inventory
   private inventory = new InventoryState();
-  private inventoryModal?: InventoryModal;
-  private gemEquipment!: GemEquipmentSystem;
 
   // Upgrade menu is now managed via React UI store (gameStore)
 
@@ -187,6 +187,9 @@ export class LevelScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
+    // Update tick system (global heartbeat for DOTs, buffs, etc.)
+    this.tickSystem.update(delta);
+
     // Update edge-scroll camera
     this.edgeScrollCamera.update(delta);
 
@@ -457,54 +460,15 @@ export class LevelScene extends Phaser.Scene {
   }
 
   private setupInventoryControls(): void {
-    // Initialize gem equipment system
-    this.gemEquipment = new GemEquipmentSystem({
-      inventory: this.inventory,
-      onEquip: (target, _gem) => {
-        // Show equip effect (target is a Minion)
-        this.showGemEquipEffect(target as Minion);
-        this.inventoryModal?.close();
-      },
-      canAffordEquip: (gemId) => {
-        const cost = this.getGemEquipCost(gemId);
-        return this.currencyDisplay.canAfford(cost);
-      },
-      spendEquipCost: (gemId) => {
-        const cost = this.getGemEquipCost(gemId);
-        this.currencyDisplay.spend(cost);
-      },
-      onCannotAfford: (gemId) => {
-        const cost = this.getGemEquipCost(gemId);
-        const pointer = this.input.activePointer;
-        this.vfx.text.show(pointer.worldX, pointer.worldY, `Need ${cost} essence!`, {
-          color: '#ff6666',
-          bold: true,
-        });
-      },
-    });
-
-    // Initialize inventory modal
-    this.inventoryModal = new InventoryModal({
-      scene: this,
-      inventory: this.inventory,
-      onGemSelected: (gem) => {
-        this.gemEquipment.selectGem(gem);
-      },
-      onClose: () => {
-        // Cancel pending equip if closed without equipping
-        if (this.gemEquipment.isAwaitingTarget()) {
-          this.gemEquipment.cancel();
-        }
-      },
-    });
-
-    // I key to toggle inventory
+    // I key to toggle inventory (now uses React UI store)
     const iKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.I);
     iKey?.on('down', () => {
-      if (this.inventoryModal?.isOpen()) {
-        this.inventoryModal.close();
-      } else {
-        this.inventoryModal?.open();
+      const store = gameStore.getState();
+      if (store.activeMenu === 'inventory') {
+        store.closeMenu();
+      } else if (store.activeMenu === 'none') {
+        this.syncGameStoreState();
+        store.openInventory();
       }
     });
   }
@@ -640,17 +604,12 @@ export class LevelScene extends Phaser.Scene {
     this.minions.push(minion);
     this.partyManager.addMinion();
 
-    // Make minion clickable for selection and gem equipping
+    // Make minion clickable for selection
     minion.setInteractive({ useHandCursor: true });
     minion.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
       if (pointer.leftButtonDown()) {
-        // Gem equipping takes priority if awaiting target
-        if (this.gemEquipment.isAwaitingTarget()) {
-          this.gemEquipment.tryEquipOn(minion);
-        } else {
-          // StarCraft-style: click to select only this minion
-          this.selectionManager.select(minion);
-        }
+        // StarCraft-style: click to select only this minion
+        this.selectionManager.select(minion);
         event.stopPropagation(); // Prevent background deselect
       }
     });
@@ -788,9 +747,8 @@ export class LevelScene extends Phaser.Scene {
     return this.eventManager;
   }
 
-  /** Get the essence cost to equip a gem */
-  private getGemEquipCost(gemId: string): number {
-    return GemRegistry.get(gemId)?.essenceCost ?? 0;
+  public getTickSystem(): TickSystem {
+    return this.tickSystem;
   }
 
   /** Repair a minion to full HP */

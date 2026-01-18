@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { Combatable, AttackConfig, AggroCapable } from '../../../core/types/interfaces';
-import { StatBar, HP_BAR_DEFAULTS, AttackBehavior, ThreatTracker, TargetedMovement, LevelingSystem, defaultXpCurve, FloatingText, DebuffManager, createDebuffVisual } from '../../../core/components';
+import { StatBar, HP_BAR_DEFAULTS, AttackBehavior, ThreatTracker, TargetedMovement, LevelingSystem, defaultXpCurve, FloatingText, DebuffManager, DebuffType, createDebuffVisual } from '../../../core/components';
 import { EnemyTypeConfig, EnemyConfig } from '../types';
 import { LACKEY_CONFIG } from '../configs';
 
@@ -99,8 +99,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
     // Floating damage text
     this.floatingText = new FloatingText(scene);
 
-    // Debuff system
-    this.debuffs = new DebuffManager(scene, createDebuffVisual);
+    // Debuff system (entityId used for tick system registration)
+    const entityId = `enemy-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    this.debuffs = new DebuffManager(scene, entityId, { visualFactory: createDebuffVisual });
 
     // Setup attack behavior for fighting back (damage from stats)
     this.attackBehavior = new AttackBehavior({
@@ -269,8 +270,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
     // Update HP bar position
     this.updateHpBar();
 
-    // Update debuffs
-    this.debuffs.update(delta, this.x, this.y);
+    // Update debuff visuals
+    this.debuffs.update(this.x, this.y);
 
     // If stunned, skip all behavior (can't move or attack)
     if (this.debuffs.isStunned()) {
@@ -363,10 +364,11 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
   }
 
   /**
-   * Apply a debuff to this enemy
+   * Apply a debuff to this enemy.
+   * Duration is in ticks (1 tick = 500ms).
    */
-  public applyDebuff(type: 'stun' | 'slow', durationMs: number): void {
-    this.debuffs.apply(type, durationMs);
+  public applyDebuff(type: DebuffType, ticks: number, onTick?: () => void): void {
+    this.debuffs.apply(type, ticks, onTick);
   }
 
   destroy(fromScene?: boolean): void {
