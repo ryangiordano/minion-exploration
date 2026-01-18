@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
+import { AnimatePresence } from 'motion/react';
 import { PhaserGame, PhaserGameRef } from './ui/PhaserGame';
 import { PartyUpgradeMenu } from './ui/screens/PartyUpgradeMenu';
 import { EssenceDisplay } from './ui/components';
@@ -67,7 +68,9 @@ export function App() {
         </div>
 
         {/* Menus render centered */}
-        {activeMenu === 'party' && <PartyUpgradeMenu />}
+        <AnimatePresence>
+          {activeMenu === 'party' && <PartyUpgradeMenu key="party-menu" />}
+        </AnimatePresence>
         {activeMenu === 'pause' && (
           <div className="placeholder-menu">
             <p>Pause Menu (React) - Coming Soon</p>

@@ -30,6 +30,7 @@
     "vitest": "^3.2.4"
   },
   "dependencies": {
+    "motion": "^12.27.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "xstate": "^5.25.0",

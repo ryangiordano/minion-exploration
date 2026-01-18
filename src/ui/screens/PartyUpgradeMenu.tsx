@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { motion } from 'motion/react';
 import { useGameStore } from '../store/gameStore';
 import { Panel, Section, EmptyText, Hint } from '../components/Panel';
 import { StatBar, StatLine, Divider } from '../components/StatBar';
@@ -8,6 +9,41 @@ import type { MinionState } from '../../shared/types';
 
 const REPAIR_COST = 10;
 const GEMS_PER_PAGE = 3;
+
+/** Animation variants for staggered enter/exit */
+const containerVariants = {
+  hidden: { opacity: 1 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.08,
+    },
+  },
+  exit: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.04,
+      staggerDirection: -1,
+      when: 'afterChildren',
+    },
+  },
+};
+
+const panelVariants = {
+  hidden: { opacity: 0, y: 20, scale: 0.95 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: { duration: 0.2, ease: 'easeOut' as const },
+  },
+  exit: {
+    opacity: 0,
+    y: -10,
+    scale: 0.95,
+    transition: { duration: 0.15 },
+  },
+};
 
 /** Color constants matching the Phaser version */
 const COLORS = {
@@ -48,24 +84,51 @@ export function PartyUpgradeMenu() {
   if (minions.length === 0) return null;
 
   return (
-    <div className="party-menu">
-      <div className="party-backdrop" onClick={handleBackdropClick} />
-      <div className="party-panels">
-        {minions.map((minion, index) => (
-          <MinionPanel
-            key={minion.id}
-            minion={minion}
-            minionIndex={index + 1}
-            inventoryGems={inventoryGems}
-            essence={essence}
-            equipGem={equipGem}
-            removeGem={removeGem}
-            repairMinion={repairMinion}
-          />
+    <motion.div
+      className="party-menu"
+      variants={containerVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+    >
+      <motion.div
+        className="party-backdrop"
+        onClick={handleBackdropClick}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0, transition: { duration: 0.15, delay: 0.15 } }}
+        transition={{ duration: 0.15 }}
+      />
+      <motion.div
+        className="party-panels"
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+      >
+        {minions.map((minion) => (
+          <motion.div key={minion.id} variants={panelVariants}>
+            <MinionPanel
+              minion={minion}
+              minionIndex={minions.indexOf(minion) + 1}
+              inventoryGems={inventoryGems}
+              essence={essence}
+              equipGem={equipGem}
+              removeGem={removeGem}
+              repairMinion={repairMinion}
+            />
+          </motion.div>
         ))}
-      </div>
-      <Hint>ESC to close</Hint>
-    </div>
+      </motion.div>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.15 }}
+      >
+        <Hint>ESC to close</Hint>
+      </motion.div>
+    </motion.div>
   );
 }
 
