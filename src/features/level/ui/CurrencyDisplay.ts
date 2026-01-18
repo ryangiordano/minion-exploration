@@ -1,44 +1,40 @@
 import Phaser from 'phaser';
 
+/** Essence bar configuration - must match React EssenceDisplay defaults */
+const ESSENCE_CONFIG = {
+  barCount: 5,
+  pillCount: 10,
+  essencePerPill: 5,
+  get essencePerBar() {
+    return this.pillCount * this.essencePerPill; // 50
+  },
+};
+
+/** HUD position config - must match React CSS positioning */
+const HUD_POSITION = {
+  padding: 16,
+  barWidth: 118, // 10 pills * 8px + gaps + padding
+  barHeight: 16, // pill height + padding
+  barGap: 2,
+};
+
 export class CurrencyDisplay {
-  private container: Phaser.GameObjects.Container;
-  private text: Phaser.GameObjects.Text;
   private currency = 0;
   private scene: Phaser.Scene;
-  private baseX: number;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
-
-    // Position in bottom-right
-    const padding = 10;
-    this.baseX = scene.cameras.main.width - padding;
-    const y = scene.cameras.main.height - padding;
-
-    this.text = scene.add.text(0, 0, 'Essence: 0', {
-      fontSize: '16px',
-      color: '#ffd700',
-      backgroundColor: '#000000',
-      padding: { x: 8, y: 4 },
-    });
-    this.text.setOrigin(1, 1);
-
-    this.container = scene.add.container(this.baseX, y, [this.text]);
-    this.container.setScrollFactor(0);
   }
 
   public add(value: number): void {
     this.currency += value;
-    this.updateDisplay();
   }
 
   public spend(amount: number): boolean {
     if (this.currency >= amount) {
       this.currency -= amount;
-      this.updateDisplay();
       return true;
     }
-    this.shakeInsufficient();
     return false;
   }
 
@@ -50,54 +46,36 @@ export class CurrencyDisplay {
     return this.currency >= amount;
   }
 
-  private updateDisplay(): void {
-    this.text.setText(`Essence: ${this.currency}`);
-  }
-
-  /** Shake the display when player can't afford something */
-  private shakeInsufficient(): void {
-    // Stop any existing shake
-    this.scene.tweens.killTweensOf(this.container);
-    this.container.x = this.baseX;
-
-    // Quick horizontal shake
-    this.scene.tweens.add({
-      targets: this.container,
-      x: this.baseX - 5,
-      duration: 50,
-      yoyo: true,
-      repeat: 3,
-      ease: 'Sine.inOut',
-      onComplete: () => {
-        this.container.x = this.baseX;
-      },
-    });
-  }
-
-  /** Pop scale effect when essence is collected */
+  /** No-op - visual feedback now handled by React */
   public pop(): void {
-    this.scene.tweens.killTweensOf(this.container);
-    this.container.setScale(1);
-
-    this.scene.tweens.add({
-      targets: this.container,
-      scaleX: 1.15,
-      scaleY: 1.15,
-      duration: 80,
-      yoyo: true,
-      ease: 'Back.out',
-    });
+    // React handles visual feedback
   }
 
-  /** Get the screen position where essence should fly to */
+  /** Get the screen position where essence should fly to (the currently filling bar) */
   public getTargetPosition(): { x: number; y: number } {
+    const camera = this.scene.cameras.main;
+
+    // Calculate which bar is currently being filled (0-indexed)
+    const currentBarIndex = Math.min(
+      Math.floor(this.currency / ESSENCE_CONFIG.essencePerBar),
+      ESSENCE_CONFIG.barCount - 1
+    );
+
+    // Bottom-right corner positioning (matching React CSS)
+    const baseX = camera.width - HUD_POSITION.padding;
+    const baseY = camera.height - HUD_POSITION.padding;
+
+    // Calculate Y position for the current bar (bars stack from top to bottom)
+    // The topmost bar (index 0) is at the top of the stack
+    const barY = baseY - (ESSENCE_CONFIG.barCount - 1 - currentBarIndex) * (HUD_POSITION.barHeight + HUD_POSITION.barGap);
+
     return {
-      x: this.baseX - this.text.width / 2,
-      y: this.scene.cameras.main.height - 10 - this.text.height / 2,
+      x: baseX - HUD_POSITION.barWidth / 2,
+      y: barY - HUD_POSITION.barHeight / 2,
     };
   }
 
   public destroy(): void {
-    this.container.destroy();
+    // Nothing to destroy - no Phaser objects
   }
 }

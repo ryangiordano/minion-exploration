@@ -39,7 +39,6 @@ export class LevelScene extends Phaser.Scene {
   private partyDisplay!: PartyDisplay;
   private readonly MINION_COST = 50;
   private readonly REPAIR_COST = 10;
-  private readonly TREASURE_VALUE = 5;
 
   // Loot
   private essenceDropper!: EssenceDropper;
@@ -139,7 +138,7 @@ export class LevelScene extends Phaser.Scene {
 
     // Add instructions
     const instructions = this.add.text(10, 10,
-      'A: Select All | 1/2/3: Select Minion | Right-Click: Move | G: Grid | I: Inventory | E: Spawn',
+      'A: Select All | 1/2/3: Select Minion | Right-Click: Move | G: Grid | C: Party | E: Spawn',
       {
         fontSize: '12px',
         color: '#ffffff',
@@ -177,11 +176,8 @@ export class LevelScene extends Phaser.Scene {
     // Setup grid lineup key
     this.setupGridLineupControls();
 
-    // Setup upgrade controls
-    this.setupUpgradeControls();
-
-    // Setup inventory controls
-    this.setupInventoryControls();
+    // Setup party menu controls (C key)
+    this.setupPartyMenuControls();
 
     // Setup move command mode (A key)
     this.setupMoveCommandControls();
@@ -296,8 +292,9 @@ export class LevelScene extends Phaser.Scene {
   private setupCollectionSystems(): void {
     // Treasure collection - plays arc effect and adds currency
     this.treasureCollection.onCollect(({ item, x, y }) => {
+      const value = item.getValue();
       item.collect();
-      this.showCollectEffect(x, y);
+      this.showCollectEffect(x, y, value);
     });
 
     // Gem collection - adds to inventory
@@ -330,9 +327,10 @@ export class LevelScene extends Phaser.Scene {
 
         // Handle treasure
         if (item instanceof Treasure) {
+          const value = item.getValue();
           item.collect();
           this.treasureCollection.remove(item as Treasure);
-          this.showCollectEffect(x, y);
+          this.showCollectEffect(x, y, value);
         }
         // Handle gems
         else if (item instanceof WorldGem) {
@@ -356,25 +354,27 @@ export class LevelScene extends Phaser.Scene {
   }
 
   /** Animated essence orb that arcs from world position to UI */
-  private showCollectEffect(worldX: number, worldY: number): void {
+  private showCollectEffect(worldX: number, worldY: number, value: number): void {
     // Burst at pickup location
     this.vfx.burst.play(worldX, worldY, 0xffd700, { count: 6, distance: 25, size: 3, duration: 200 });
 
     // Arc projectile to currency display
     const target = this.currencyDisplay.getTargetPosition();
     this.vfx.arc.launch(worldX, worldY, target.x, target.y, () => {
-      this.onEssenceArrived();
+      this.onEssenceArrived(value);
     });
   }
 
   /** Called when essence orb arrives at the UI */
-  private onEssenceArrived(): void {
-    this.currencyDisplay.add(this.TREASURE_VALUE);
-    this.currencyDisplay.pop();
+  private onEssenceArrived(value: number): void {
+    this.currencyDisplay.add(value);
+
+    // Sync to React store so the EssenceDisplay updates
+    this.syncGameStoreState();
 
     const target = this.currencyDisplay.getTargetPosition();
     this.vfx.burst.playUI(target.x, target.y, 0xffd700, { count: 10, randomizeDistance: true });
-    this.vfx.text.show(target.x, target.y, `+${this.TREASURE_VALUE}`, {
+    this.vfx.text.show(target.x, target.y, `+${value}`, {
       fontSize: '16px',
       color: '#ffd700',
       bold: true,
@@ -414,7 +414,7 @@ export class LevelScene extends Phaser.Scene {
     });
   }
 
-  private setupUpgradeControls(): void {
+  private setupPartyMenuControls(): void {
     // Register command handlers with the React UI store
     gameStore.getState().registerCommandHandlers({
       onEquipGem: (minionId: string, gemId: string) => {
@@ -481,10 +481,10 @@ export class LevelScene extends Phaser.Scene {
       },
     });
 
-    // U key to open upgrade menu
-    const uKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.U);
-    uKey?.on('down', () => {
-      this.tryOpenUpgradeMenu();
+    // C key to toggle party menu
+    const cKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.C);
+    cKey?.on('down', () => {
+      this.togglePartyMenu();
     });
   }
 
@@ -502,48 +502,29 @@ export class LevelScene extends Phaser.Scene {
     store.setPlayerEssence(this.currencyDisplay.getAmount());
   }
 
-  private setupInventoryControls(): void {
-    // I key to toggle inventory (now uses React UI store)
-    const iKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.I);
-    iKey?.on('down', () => {
-      const store = gameStore.getState();
-      if (store.activeMenu === 'inventory') {
-        store.closeMenu();
-      } else if (store.activeMenu === 'none') {
-        this.syncGameStoreState();
-        store.openInventory();
-      }
-    });
-  }
-
   private setupMoveCommandControls(): void {
     // Initialize targeting indicator (for visual feedback during move commands)
     this.targetingIndicator = new TargetingIndicator(this);
     this.targetingIndicator.setUnitSource(() => this.getSelectedMinions());
   }
 
-  private tryOpenUpgradeMenu(): void {
+  private togglePartyMenu(): void {
     const store = gameStore.getState();
 
-    // Don't reopen if already open
-    if (store.activeMenu === 'upgrade') {
+    // If party menu is open, close it
+    if (store.activeMenu === 'party') {
+      store.closeMenu();
       return;
     }
 
-    // Only open if exactly 1 minion selected
-    const selected = this.getSelectedMinions();
-    if (selected.length !== 1) {
+    // Don't open if another menu is active
+    if (store.activeMenu !== 'none') {
       return;
     }
 
     // Sync state and open menu
     this.syncGameStoreState();
-
-    // Find the minion's store ID
-    const minionIndex = this.minions.indexOf(selected[0]);
-    if (minionIndex >= 0) {
-      store.openUpgradeMenu(`minion-${minionIndex}`);
-    }
+    store.openPartyMenu();
   }
 
   private showGemEquipEffect(minion: Minion): void {
@@ -669,32 +650,45 @@ export class LevelScene extends Phaser.Scene {
       // Drop equipped gems at minion's death location
       this.dropGemsAtLocation(minion.x, minion.y, droppedGemIds);
 
-      // Close upgrade menu if this minion dies while menu is open for them
-      const store = gameStore.getState();
-      const minionIndex = this.minions.indexOf(minion);
-      if (store.activeMenu === 'upgrade' && store.selectedMinionId === `minion-${minionIndex}`) {
-        store.closeMenu();
-      }
+      // Sync state to update party menu if open
+      this.syncGameStoreState();
     });
 
     return minion;
   }
 
   private spawnTreasures(worldWidth: number, worldHeight: number): void {
-    for (let i = 0; i < 10; i++) {
-      const x = Phaser.Math.Between(100, worldWidth - 100);
-      const y = Phaser.Math.Between(100, worldHeight - 100);
+    // Define treasure clusters: each cluster has a center and spawns nearby essences
+    type EssenceDenomination = 1 | 5 | 10;
+    const clusters: { denominations: EssenceDenomination[] }[] = [
+      { denominations: [1, 1, 1, 1, 1, 5] }, // Small pile with a medium
+      { denominations: [1, 1, 1, 5, 5] }, // Mixed pile
+      { denominations: [1, 1, 10] }, // Small pile with a large
+    ];
 
-      const treasure = new Treasure(this, x, y);
-      this.treasureCollection.add(treasure);
+    const clusterSpread = 15; // Tight cluster for satisfying scoop collection
 
-      // Right-click on treasure = move selected minions to collect
-      treasure.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
-        if (pointer.rightButtonDown() && this.selectionManager.hasSelection()) {
-          this.commandSystem.collect(treasure.x, treasure.y);
-          event.stopPropagation();
-        }
-      });
+    for (const cluster of clusters) {
+      // Pick random cluster center
+      const centerX = Phaser.Math.Between(150, worldWidth - 150);
+      const centerY = Phaser.Math.Between(150, worldHeight - 150);
+
+      for (const denomination of cluster.denominations) {
+        // Offset from cluster center
+        const offsetX = Phaser.Math.Between(-clusterSpread, clusterSpread);
+        const offsetY = Phaser.Math.Between(-clusterSpread, clusterSpread);
+
+        const treasure = new Treasure(this, centerX + offsetX, centerY + offsetY, denomination);
+        this.treasureCollection.add(treasure);
+
+        // Right-click on treasure = move selected minions to collect
+        treasure.on('pointerdown', (pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
+          if (pointer.rightButtonDown() && this.selectionManager.hasSelection()) {
+            this.commandSystem.collect(treasure.x, treasure.y);
+            event.stopPropagation();
+          }
+        });
+      }
     }
   }
 

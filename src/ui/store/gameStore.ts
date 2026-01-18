@@ -10,11 +10,9 @@ interface GameStore {
 
   // UI state
   activeMenu: ActiveMenu;
-  selectedMinionId: string | null;
 
   // Actions - UI control
-  openUpgradeMenu: (minionId: string) => void;
-  openInventory: () => void;
+  openPartyMenu: () => void;
   closeMenu: () => void;
   pause: () => void;
   resume: () => void;
@@ -50,7 +48,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
   minions: [],
   inventoryGems: [],
   activeMenu: 'none',
-  selectedMinionId: null,
 
   // Command handlers (null until Phaser registers them)
   _onEquipGem: null,
@@ -58,20 +55,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
   _onRepairMinion: null,
 
   // UI actions
-  openUpgradeMenu: (minionId) => set({
-    activeMenu: 'upgrade',
-    selectedMinionId: minionId,
-    isPaused: true
-  }),
-
-  openInventory: () => set({
-    activeMenu: 'inventory',
+  openPartyMenu: () => set({
+    activeMenu: 'party',
     isPaused: true
   }),
 
   closeMenu: () => set({
     activeMenu: 'none',
-    selectedMinionId: null,
     isPaused: false
   }),
 

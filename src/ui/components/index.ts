@@ -3,3 +3,4 @@ export { StatBar, StatLine, Divider } from './StatBar';
 export { Button, TextButton } from './Button';
 export { GemIcon } from './GemIcon';
 export { GemRow } from './GemRow';
+export { EssenceBar, EssenceDisplay } from './EssenceBar';

@@ -42,6 +42,16 @@ html, body, #root {
   pointer-events: auto;
 }
 
+/* ===========================================
+   HUD Positioning
+   =========================================== */
+
+.hud-bottom-right {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+}
+
 /* Placeholder styling for development */
 .placeholder-menu {
   background: rgba(26, 26, 46, 0.95);
@@ -542,4 +552,161 @@ html, body, #root {
   font-size: 12px;
   font-weight: bold;
   color: #ffd700;
+}
+
+/* ===========================================
+   Essence Bar Component (Vertical)
+   =========================================== */
+
+.essence-display-vertical {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.essence-bar-vertical {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px;
+  background: #1a1a2e;
+  padding: 6px;
+  border-radius: 6px;
+  border: 2px solid #3a3a5a;
+  width: 32px;
+  height: 350px;
+}
+
+.essence-segment {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  background: #2a2a3e;
+  border-radius: 1px;
+}
+
+.essence-segment.filled {
+  background: linear-gradient(90deg, #ffd700 0%, #ffec80 50%, #ffd700 100%);
+  box-shadow: 0 0 3px rgba(255, 215, 0, 0.5);
+  position: relative;
+}
+
+/* Sparkle particles on filled segments */
+.essence-segment.filled::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.6) 50%,
+    transparent 100%
+  );
+  animation: essence-shimmer 2s ease-in-out infinite;
+  opacity: 0;
+}
+
+/* Stagger the shimmer animation on different segments */
+.essence-segment.filled:nth-child(5n)::after {
+  animation-delay: 0s;
+}
+.essence-segment.filled:nth-child(5n+1)::after {
+  animation-delay: 0.4s;
+}
+.essence-segment.filled:nth-child(5n+2)::after {
+  animation-delay: 0.8s;
+}
+.essence-segment.filled:nth-child(5n+3)::after {
+  animation-delay: 1.2s;
+}
+.essence-segment.filled:nth-child(5n+4)::after {
+  animation-delay: 1.6s;
+}
+
+@keyframes essence-shimmer {
+  0%, 100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Ambient glow pulse on the whole bar */
+.essence-bar-vertical {
+  animation: essence-glow 3s ease-in-out infinite;
+}
+
+@keyframes essence-glow {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(255, 215, 0, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(255, 215, 0, 0.4);
+  }
+}
+
+.essence-label {
+  font-size: 11px;
+  font-weight: bold;
+  color: #ffd700;
+  text-align: center;
+}
+
+/* ===========================================
+   Party Upgrade Menu
+   =========================================== */
+
+.party-menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 16px;
+  z-index: 100;
+  font-family: Arial, sans-serif;
+}
+
+.party-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: -1;
+}
+
+.party-panels {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  width: 100%;
+  max-width: 900px;
+}
+
+.party-panels .panel {
+  flex: 1;
+  min-width: 0;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+}
+
+.party-menu .hint-text {
+  margin-top: 8px;
+}
+
+/* Stat grid for compact display */
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 12px;
 }

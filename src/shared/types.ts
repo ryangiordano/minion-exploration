@@ -42,4 +42,4 @@ export interface InventoryGemState {
 }
 
 /** Active menu types */
-export type ActiveMenu = 'none' | 'upgrade' | 'pause' | 'inventory' | 'main';
+export type ActiveMenu = 'none' | 'party' | 'pause' | 'main';

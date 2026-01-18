@@ -1,23 +1,29 @@
 import { useRef } from 'react';
 import { PhaserGame, PhaserGameRef } from './ui/PhaserGame';
-import { UpgradeMenu } from './ui/screens/UpgradeMenu';
-import { InventoryModal } from './ui/screens/InventoryModal';
+import { PartyUpgradeMenu } from './ui/screens/PartyUpgradeMenu';
+import { EssenceDisplay } from './ui/components';
 import { useGameStore } from './ui/store/gameStore';
 import './index.css';
 
 export function App() {
   const phaserRef = useRef<PhaserGameRef>(null);
   const activeMenu = useGameStore((s) => s.activeMenu);
+  const playerEssence = useGameStore((s) => s.playerEssence);
 
   return (
     <div className="game-container">
       {/* Phaser canvas */}
       <PhaserGame ref={phaserRef} />
 
-      {/* React UI overlay - menus render here */}
+      {/* React UI overlay */}
       <div className="ui-overlay">
-        {activeMenu === 'upgrade' && <UpgradeMenu />}
-        {activeMenu === 'inventory' && <InventoryModal />}
+        {/* HUD elements - always visible */}
+        <div className="hud-bottom-right">
+          <EssenceDisplay essence={playerEssence} />
+        </div>
+
+        {/* Menus render centered */}
+        {activeMenu === 'party' && <PartyUpgradeMenu />}
         {activeMenu === 'pause' && (
           <div className="placeholder-menu">
             <p>Pause Menu (React) - Coming Soon</p>
