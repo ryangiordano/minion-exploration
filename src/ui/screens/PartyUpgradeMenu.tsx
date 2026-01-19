@@ -1,13 +1,11 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { useGameStore } from '../store/gameStore';
+import { useGameStore, GemSlotType } from '../store/gameStore';
 import { Panel, Section, EmptyText, Hint } from '../components/Panel';
-import { StatBar, StatLine, Divider } from '../components/StatBar';
-import { Button } from '../components/Button';
+import { StatBar } from '../components/StatBar';
 import { GemRow } from '../components/GemRow';
-import type { MinionState } from '../../shared/types';
+import type { EquippedGemState, NanobotState, InventoryGemState } from '../../shared/types';
 
-const REPAIR_COST = 10;
 const GEMS_PER_PAGE = 3;
 
 /** Animation variants for staggered enter/exit */
@@ -45,30 +43,26 @@ const panelVariants = {
   },
 };
 
-/** Color constants matching the Phaser version */
+/** Color constants */
 const COLORS = {
-  strength: '#ff8844',
-  magic: '#aa66ff',
-  dexterity: '#44ff88',
-  resilience: '#66aaff',
   hp: '#ff6666',
   mp: '#6666ff',
-  xp: '#ffd700',
+  personal: '#ffaa44',
+  nanobot: '#44aaff',
 };
 
 export function PartyUpgradeMenu() {
-  const minions = useGameStore((s) => s.minions);
+  const robot = useGameStore((s) => s.robot);
+  const nanobots = useGameStore((s) => s.nanobots);
   const inventoryGems = useGameStore((s) => s.inventoryGems);
-  const essence = useGameStore((s) => s.playerEssence);
   const closeMenu = useGameStore((s) => s.closeMenu);
-  const equipGem = useGameStore((s) => s.equipGem);
-  const removeGem = useGameStore((s) => s.removeGem);
-  const repairMinion = useGameStore((s) => s.repairMinion);
+  const equipRobotGem = useGameStore((s) => s.equipRobotGem);
+  const removeRobotGem = useGameStore((s) => s.removeRobotGem);
 
   // Handle ESC key to close
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' || e.key === 'c' || e.key === 'C') {
         closeMenu();
       }
     };
@@ -81,7 +75,7 @@ export function PartyUpgradeMenu() {
     closeMenu();
   };
 
-  if (minions.length === 0) return null;
+  if (!robot) return null;
 
   return (
     <motion.div
@@ -106,19 +100,20 @@ export function PartyUpgradeMenu() {
         animate="visible"
         exit="exit"
       >
-        {minions.map((minion) => (
-          <motion.div key={minion.id} variants={panelVariants}>
-            <MinionPanel
-              minion={minion}
-              minionIndex={minions.indexOf(minion) + 1}
-              inventoryGems={inventoryGems}
-              essence={essence}
-              equipGem={equipGem}
-              removeGem={removeGem}
-              repairMinion={repairMinion}
-            />
-          </motion.div>
-        ))}
+        {/* Robot Panel - Equipment */}
+        <motion.div variants={panelVariants}>
+          <RobotPanel
+            robot={robot}
+            inventoryGems={inventoryGems}
+            equipRobotGem={equipRobotGem}
+            removeRobotGem={removeRobotGem}
+          />
+        </motion.div>
+
+        {/* Nanobot Overview Panel */}
+        <motion.div variants={panelVariants}>
+          <NanobotOverviewPanel nanobots={nanobots} />
+        </motion.div>
       </motion.div>
       <motion.div
         initial={{ opacity: 0 }}
@@ -126,39 +121,38 @@ export function PartyUpgradeMenu() {
         exit={{ opacity: 0 }}
         transition={{ duration: 0.15 }}
       >
-        <Hint>ESC to close</Hint>
+        <Hint>ESC or C to close</Hint>
       </motion.div>
     </motion.div>
   );
 }
 
-interface MinionPanelProps {
-  minion: MinionState;
-  minionIndex: number;
-  inventoryGems: ReturnType<typeof useGameStore.getState>['inventoryGems'];
-  essence: number;
-  equipGem: (minionId: string, gemId: string) => void;
-  removeGem: (minionId: string, slot: number) => void;
-  repairMinion: (minionId: string) => void;
+interface RobotPanelProps {
+  robot: NonNullable<ReturnType<typeof useGameStore.getState>['robot']>;
+  inventoryGems: InventoryGemState[];
+  equipRobotGem: (slotType: GemSlotType, slotIndex: number, gemInstanceId: string) => void;
+  removeRobotGem: (slotType: GemSlotType, slotIndex: number) => void;
 }
 
-function MinionPanel({
-  minion,
-  minionIndex,
+function RobotPanel({
+  robot,
   inventoryGems,
-  essence,
-  equipGem,
-  removeGem,
-  repairMinion,
-}: MinionPanelProps) {
+  equipRobotGem,
+  removeRobotGem,
+}: RobotPanelProps) {
   const [inventoryPage, setInventoryPage] = useState(0);
+  const [selectedSlot, setSelectedSlot] = useState<{ type: GemSlotType; index: number } | null>(null);
 
-  const isDamaged = minion.hp < minion.maxHp;
-  const canRepair = essence >= REPAIR_COST && isDamaged;
+  // Get all equipped gem IDs to filter inventory
+  const equippedGemIds = new Set<string>();
+  robot.personalGemSlots.forEach(gem => {
+    if (gem) equippedGemIds.add(gem.id);
+  });
+  robot.nanobotGemSlots.forEach(gem => {
+    if (gem) equippedGemIds.add(gem.id);
+  });
 
-  // Filter out gems already equipped on this minion
-  const equippedGemIds = new Set(minion.equippedGems.map((g) => g.id));
-  const availableGems = inventoryGems.filter((g) => !equippedGemIds.has(g.gemId));
+  const availableGems = inventoryGems.filter(g => !equippedGemIds.has(g.gemId));
 
   // Pagination
   const totalPages = Math.max(1, Math.ceil(availableGems.length / GEMS_PER_PAGE));
@@ -168,58 +162,70 @@ function MinionPanel({
     (currentPage + 1) * GEMS_PER_PAGE
   );
 
+  const handleSlotClick = (type: GemSlotType, index: number, gem: EquippedGemState | null) => {
+    if (gem) {
+      // Remove gem from slot
+      removeRobotGem(type, index);
+    } else {
+      // Select slot for equipping
+      setSelectedSlot(selectedSlot?.type === type && selectedSlot?.index === index ? null : { type, index });
+    }
+  };
+
+  const handleEquipGem = (gemInstanceId: string) => {
+    if (selectedSlot) {
+      equipRobotGem(selectedSlot.type, selectedSlot.index, gemInstanceId);
+      setSelectedSlot(null);
+    }
+  };
+
   return (
-    <Panel title={`MINION ${minionIndex}`}>
-      {/* Stats Section - stacked on top */}
-      <Section title="STATS">
-        <StatBar label="HP" current={minion.hp} max={minion.maxHp} color={COLORS.hp} />
-        <StatBar label="MP" current={minion.mp} max={minion.maxMp} color={COLORS.mp} />
-        <StatBar
-          label={`Lv${minion.level}`}
-          current={minion.xp}
-          max={minion.xpToNext}
-          color={COLORS.xp}
-        />
-
-        <Divider />
-
-        <div className="stat-grid">
-          <StatLine label="STR" value={minion.stats.strength} color={COLORS.strength} />
-          <StatLine label="MAG" value={minion.stats.magic} color={COLORS.magic} />
-          <StatLine label="DEX" value={minion.stats.dexterity} color={COLORS.dexterity} />
-          <StatLine label="RES" value={minion.stats.resilience} color={COLORS.resilience} />
-        </div>
-
-        <Divider />
-
-        <StatLine label="Damage" value={minion.attack.damage} color={COLORS.strength} />
-        <StatLine label="Range" value={minion.attack.range} />
+    <Panel title="ROBOT">
+      {/* Robot Stats */}
+      <Section title="STATUS">
+        <StatBar label="HP" current={robot.hp} max={robot.maxHp} color={COLORS.hp} />
+        <StatBar label="MP" current={robot.mp} max={robot.maxMp} color={COLORS.mp} />
       </Section>
 
-      {/* Equipped Gems */}
-      <Section title="EQUIPPED">
-        {minion.equippedGems.length === 0 ? (
-          <EmptyText>No gems equipped</EmptyText>
-        ) : (
-          minion.equippedGems.map((gem) => (
-            <GemRow
-              key={`${gem.id}-${gem.slot}`}
-              name={gem.name}
-              description={gem.description}
-              color={gem.color}
-              action={{
-                label: 'Remove',
-                onClick: () => removeGem(minion.id, gem.slot),
-                color: '#ff6666',
-              }}
+      {/* Personal Gem Slots */}
+      <Section title="ROBOT GEMS">
+        <div className="gem-slots">
+          {robot.personalGemSlots.map((gem, index) => (
+            <GemSlot
+              key={`personal-${index}`}
+              gem={gem}
+              slotType="personal"
+              slotIndex={index}
+              isSelected={selectedSlot?.type === 'personal' && selectedSlot?.index === index}
+              onClick={() => handleSlotClick('personal', index, gem)}
+              color={COLORS.personal}
             />
-          ))
-        )}
+          ))}
+        </div>
+        <div className="slot-hint">Click empty slot to equip, click gem to remove</div>
       </Section>
 
-      {/* Inventory Gems */}
+      {/* Nanobot Gem Slots */}
+      <Section title="NANOBOT GEMS">
+        <div className="gem-slots">
+          {robot.nanobotGemSlots.map((gem, index) => (
+            <GemSlot
+              key={`nanobot-${index}`}
+              gem={gem}
+              slotType="nanobot"
+              slotIndex={index}
+              isSelected={selectedSlot?.type === 'nanobot' && selectedSlot?.index === index}
+              onClick={() => handleSlotClick('nanobot', index, gem)}
+              color={COLORS.nanobot}
+            />
+          ))}
+        </div>
+        <div className="slot-hint">Nanobot gems affect all nanobots</div>
+      </Section>
+
+      {/* Inventory */}
       <Section
-        title="INVENTORY"
+        title={selectedSlot ? `SELECT GEM FOR ${selectedSlot.type.toUpperCase()} SLOT` : 'INVENTORY'}
         rightContent={
           totalPages > 1 && (
             <Pagination
@@ -234,38 +240,115 @@ function MinionPanel({
         {availableGems.length === 0 ? (
           <EmptyText>No gems available</EmptyText>
         ) : (
-          pagedGems.map((gem) => {
-            const canAfford = essence >= gem.essenceCost;
-            return (
-              <GemRow
-                key={gem.instanceId}
-                name={gem.name}
-                description={gem.description}
-                color={gem.color}
-                cost={{ amount: gem.essenceCost, canAfford }}
-                action={{
-                  label: 'Equip',
-                  onClick: () => {
-                    if (canAfford) {
-                      equipGem(minion.id, gem.gemId);
-                    }
-                  },
-                  color: canAfford ? '#44ff44' : '#444444',
-                }}
-              />
-            );
-          })
+          pagedGems.map((gem) => (
+            <GemRow
+              key={gem.instanceId}
+              name={gem.name}
+              description={gem.description}
+              color={gem.color}
+              action={selectedSlot ? {
+                label: 'Equip',
+                onClick: () => handleEquipGem(gem.instanceId),
+                color: '#44ff44',
+              } : undefined}
+            />
+          ))
+        )}
+        {!selectedSlot && availableGems.length > 0 && (
+          <div className="slot-hint">Select a slot above to equip gems</div>
         )}
       </Section>
+    </Panel>
+  );
+}
 
-      {/* Repair Button */}
-      {isDamaged && (
-        <div className="repair-section">
-          <Button onClick={() => repairMinion(minion.id)} disabled={!canRepair}>
-            Repair - {REPAIR_COST} Essence
-          </Button>
+interface GemSlotProps {
+  gem: EquippedGemState | null;
+  slotType: GemSlotType;
+  slotIndex: number;
+  isSelected: boolean;
+  onClick: () => void;
+  color: string;
+}
+
+function GemSlot({ gem, slotType, slotIndex, isSelected, onClick, color }: GemSlotProps) {
+  const slotLabel = `${slotType === 'personal' ? 'R' : 'N'}${slotIndex + 1}`;
+
+  return (
+    <div
+      className={`gem-slot ${gem ? 'filled' : 'empty'} ${isSelected ? 'selected' : ''}`}
+      onClick={onClick}
+      style={{
+        borderColor: isSelected ? '#ffffff' : color,
+        backgroundColor: gem ? `#${gem.color.toString(16).padStart(6, '0')}33` : 'transparent',
+      }}
+    >
+      <div className="slot-label">{slotLabel}</div>
+      {gem ? (
+        <div className="slot-gem">
+          <div
+            className="gem-icon"
+            style={{ backgroundColor: `#${gem.color.toString(16).padStart(6, '0')}` }}
+          />
+          <div className="gem-name">{gem.name}</div>
         </div>
+      ) : (
+        <div className="slot-empty">Empty</div>
       )}
+    </div>
+  );
+}
+
+interface NanobotOverviewPanelProps {
+  nanobots: NanobotState[];
+}
+
+function NanobotOverviewPanel({ nanobots }: NanobotOverviewPanelProps) {
+  const totalHp = nanobots.reduce((sum, n) => sum + n.hp, 0);
+  const totalMaxHp = nanobots.reduce((sum, n) => sum + n.maxHp, 0);
+  const aliveCount = nanobots.filter(n => n.hp > 0).length;
+
+  return (
+    <Panel title="NANOBOTS">
+      <Section title="OVERVIEW">
+        <div className="nanobot-summary">
+          <div className="summary-stat">
+            <span className="stat-label">Active:</span>
+            <span className="stat-value">{aliveCount}/{nanobots.length}</span>
+          </div>
+          {totalMaxHp > 0 && (
+            <StatBar
+              label="Total HP"
+              current={totalHp}
+              max={totalMaxHp}
+              color={COLORS.hp}
+            />
+          )}
+        </div>
+      </Section>
+
+      <Section title="INDIVIDUAL STATUS">
+        {nanobots.length === 0 ? (
+          <EmptyText>No nanobots spawned</EmptyText>
+        ) : (
+          <div className="nanobot-list">
+            {nanobots.map((nanobot, index) => (
+              <div key={nanobot.id} className="nanobot-item">
+                <div className="nanobot-label">#{index + 1}</div>
+                <div className="nanobot-bar">
+                  <StatBar
+                    label=""
+                    current={nanobot.hp}
+                    max={nanobot.maxHp}
+                    color={nanobot.hp > 0 ? COLORS.hp : '#444444'}
+                    compact
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
     </Panel>
   );
 }

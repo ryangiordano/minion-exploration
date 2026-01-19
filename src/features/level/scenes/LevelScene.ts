@@ -15,7 +15,9 @@ import { Portal } from '../objects/Portal';
 import { Robot } from '../../robot';
 import { SwarmManager } from '../../nanobots';
 import { Combatable } from '../../../core/types/interfaces';
-import { gameStore } from '../../../ui/store/gameStore';
+import { gameStore, GemSlotType } from '../../../ui/store/gameStore';
+import { GemRegistry } from '../../upgrade';
+import type { RobotState, NanobotState, InventoryGemState, EquippedGemState } from '../../../shared/types';
 
 export class LevelScene extends Phaser.Scene {
   // Main character
@@ -23,6 +25,9 @@ export class LevelScene extends Phaser.Scene {
   private swarmManager!: SwarmManager;
 
   private enemies: Enemy[] = [];
+
+  // Physics group for enemy collision bodies (inner circles that prevent stacking)
+  private enemyCollisionGroup!: Phaser.Physics.Arcade.Group;
   private xpTracker = new CombatXpTracker({ baseXpPerKill: 10 });
   private tickSystem = new TickSystem();
   private eventManager?: GameEventManager;
@@ -90,14 +95,20 @@ export class LevelScene extends Phaser.Scene {
     // Visual effects manager
     this.vfx = new Vfx(this);
 
+    // Create physics group for enemy collision bodies
+    this.enemyCollisionGroup = this.physics.add.group();
+
     // Spawn treasures around the world
     this.spawnTreasures(this.worldWidth, this.worldHeight);
+
+    // Spawn robot and nanobots BEFORE enemies so colliders can be set up
+    this.spawnRobotAndSwarm();
 
     // Spawn enemies from level generator
     this.spawnEnemiesFromLevelData();
 
-    // Spawn robot and nanobots
-    this.spawnRobotAndSwarm();
+    // Set up collisions between enemy collision bodies and robot/nanobots
+    this.setupEnemyToUnitCollisions();
 
     // Setup controls
     this.setupNanobotCommandControls();
@@ -105,7 +116,7 @@ export class LevelScene extends Phaser.Scene {
 
     // Add instructions
     const instructions = this.add.text(10, 10,
-      'WASD: Move | Q: Recall Nanobots | Left-Click: Send Nanobots | E: Spawn Nanobot | Space: Collect',
+      'WASD: Move | Q: Recall | Click: Send Nanobots | E: Spawn | Space: Collect | C: Menu',
       {
         fontSize: '12px',
         color: '#ffffff',
@@ -139,6 +150,11 @@ export class LevelScene extends Phaser.Scene {
 
     // Setup spawn nanobot key
     this.setupSpawnControls();
+
+    // Setup menu controls and store sync
+    this.setupMenuControls();
+    this.registerStoreCommandHandlers();
+    this.syncStateToStore();
   }
 
   private nanobotCountText?: Phaser.GameObjects.Text;
@@ -214,7 +230,43 @@ export class LevelScene extends Phaser.Scene {
     if (!this.portal || this.portal.isActivated() || this.robot.isDefeated()) return;
 
     if (this.portal.containsPoint(this.robot.x, this.robot.y)) {
-      this.portal.enter();
+      // Disable player movement and tween to portal center
+      this.robot.disableMovement();
+
+      const portalX = this.portal.x;
+      const portalY = this.portal.y;
+
+      // Tween robot to portal center
+      this.tweens.add({
+        targets: this.robot,
+        x: portalX,
+        y: portalY,
+        duration: 400,
+        ease: 'Sine.inOut',
+        onComplete: () => {
+          this.portal?.enter();
+        },
+      });
+
+      // Freeze nanobots and tween them to form a clock pattern around the portal
+      this.swarmManager.freezeAll();
+      const nanobots = this.swarmManager.getNanobots().filter(n => !n.isDefeated());
+      const formationRadius = this.portal.getRadius() * 1.5;
+
+      nanobots.forEach((nanobot, index) => {
+        // Distribute evenly around the circle like clock positions
+        const angle = (index / nanobots.length) * Math.PI * 2 - Math.PI / 2; // Start at 12 o'clock
+        const targetX = portalX + Math.cos(angle) * formationRadius;
+        const targetY = portalY + Math.sin(angle) * formationRadius;
+
+        this.tweens.add({
+          targets: nanobot,
+          x: targetX,
+          y: targetY,
+          duration: 400,
+          ease: 'Sine.inOut',
+        });
+      });
     }
   }
 
@@ -256,7 +308,10 @@ export class LevelScene extends Phaser.Scene {
 
   private enterPortal(): void {
     this.isTransitioning = true;
-    this.portal = undefined;
+
+    // Save portal position for confetti (portal stays visible during fade)
+    const portalX = this.portal?.x ?? this.worldWidth / 2;
+    const portalY = this.portal?.y ?? this.worldHeight / 2;
 
     // Heal robot
     this.robot.heal(this.robot.getMaxHp());
@@ -264,10 +319,18 @@ export class LevelScene extends Phaser.Scene {
     // Advance to next floor
     const nextFloor = this.gameState.advanceFloor();
 
-    // Play transition sequence
+    // Variable to hold the arrival portal
+    let arrivalPortal: Portal | undefined;
+
+    // Play transition sequence with confetti from portal
     const transition = new FloorTransition(this, {
       transitionText: `Descending to floor ${nextFloor}...`,
+      confettiOrigin: { x: portalX, y: portalY },
       onScreenBlack: () => {
+        // Destroy the entry portal (screen is black, player won't see)
+        this.portal?.destroy();
+        this.portal = undefined;
+
         // Do all repositioning while screen is black
         this.clearFloorLoot();
         this.robot.setPosition(this.worldWidth / 2, this.worldHeight / 2);
@@ -275,10 +338,22 @@ export class LevelScene extends Phaser.Scene {
         this.floorDisplay.setFloor(nextFloor);
         this.spawnEnemiesFromLevelData();
         this.spawnTreasures(this.worldWidth, this.worldHeight);
+
+        // Create arrival portal at center (already scaled up, as if we came through it)
+        arrivalPortal = new Portal(this, this.worldWidth / 2, this.worldHeight / 2, {
+          skipSpawnAnimation: true,
+        });
+        arrivalPortal.setScale(3); // Start at the "grown" size
       },
     });
 
     transition.play(() => {
+      // After fade in, play the exit animation (portal shrinks away)
+      // Re-enable movement and unfreeze nanobots once the portal fully disappears
+      arrivalPortal?.playExitAnimation(() => {
+        this.robot.enableMovement();
+        this.swarmManager.unfreezeAll();
+      });
       this.isTransitioning = false;
     });
   }
@@ -405,6 +480,9 @@ export class LevelScene extends Phaser.Scene {
 
       const cost = this.swarmManager.getSpawnCost();
       if (this.currencyDisplay.spend(cost)) {
+        // Sync to React store so the EssenceDisplay updates
+        gameStore.getState().setPlayerEssence(this.currencyDisplay.getAmount());
+
         const nanobot = this.swarmManager.spawnNanobot();
         if (nanobot) {
           // Spawn effect
@@ -466,8 +544,8 @@ export class LevelScene extends Phaser.Scene {
     this.robot = new Robot(this, centerX, centerY, {
       maxHp: 20,
       moveSpeed: 160,
-      personalSlots: 2,
-      nanobotSlots: 2,
+      personalSlots: 3,
+      nanobotSlots: 3,
     });
 
     // Camera follows robot
@@ -586,6 +664,9 @@ export class LevelScene extends Phaser.Scene {
     const enemy = new Enemy(this, x, y, { level, type });
     this.enemies.push(enemy);
 
+    // Set up collision between enemy's inner collision body and robot/nanobots
+    this.setupEnemyColliders(enemy);
+
     enemy.onDeath((deadEnemy) => {
       this.xpTracker.distributeXp(deadEnemy);
       const index = this.enemies.indexOf(deadEnemy);
@@ -606,6 +687,29 @@ export class LevelScene extends Phaser.Scene {
     });
 
     return enemy;
+  }
+
+  /** Add an enemy's collision body to the physics group */
+  private setupEnemyColliders(enemy: Enemy): void {
+    const collisionBody = enemy.getCollisionBody();
+    this.enemyCollisionGroup.add(collisionBody);
+  }
+
+  /** Set up collisions between enemy collision bodies and robot/nanobots */
+  private setupEnemyToUnitCollisions(): void {
+    // Collide enemy collision bodies with robot
+    this.physics.add.collider(this.enemyCollisionGroup, this.robot);
+
+    // Collide enemy collision bodies with each nanobot
+    // Note: We add colliders for existing nanobots and hook into swarm spawn for future ones
+    for (const nanobot of this.swarmManager.getNanobots()) {
+      this.physics.add.collider(this.enemyCollisionGroup, nanobot);
+    }
+
+    // Hook into swarm manager to add colliders for newly spawned nanobots
+    this.swarmManager.onNanobotSpawn((nanobot) => {
+      this.physics.add.collider(this.enemyCollisionGroup, nanobot);
+    });
   }
 
   public getEventManager(): GameEventManager | undefined {
@@ -634,5 +738,168 @@ export class LevelScene extends Phaser.Scene {
   /** Get the currency display for external access */
   public getCurrencyDisplay(): CurrencyDisplay {
     return this.currencyDisplay;
+  }
+
+  // ===========================================
+  // Store Sync & Menu Controls
+  // ===========================================
+
+  /** Setup C key to open the party menu */
+  private setupMenuControls(): void {
+    const cKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.C);
+    cKey?.on('down', () => {
+      const store = gameStore.getState();
+      if (store.activeMenu === 'none') {
+        this.syncStateToStore();
+        store.openPartyMenu();
+      } else {
+        store.closeMenu();
+      }
+    });
+  }
+
+  /** Register command handlers so React UI can trigger Phaser actions */
+  private registerStoreCommandHandlers(): void {
+    gameStore.getState().registerCommandHandlers({
+      // Legacy handlers (not used but required by interface)
+      onEquipGem: () => {},
+      onRemoveGem: () => {},
+      onRepairMinion: () => {},
+
+      // Robot gem handlers
+      onEquipRobotGem: (slotType: GemSlotType, slotIndex: number, gemInstanceId: string) => {
+        this.handleEquipRobotGem(slotType, slotIndex, gemInstanceId);
+      },
+      onRemoveRobotGem: (slotType: GemSlotType, slotIndex: number) => {
+        this.handleRemoveRobotGem(slotType, slotIndex);
+      },
+    });
+  }
+
+  /** Handle equipping a gem to a robot slot */
+  private handleEquipRobotGem(slotType: GemSlotType, slotIndex: number, gemInstanceId: string): void {
+    // Find the gem in inventory
+    const inventoryGem = this.inventory.getGems().find(g => g.instanceId === gemInstanceId);
+    if (!inventoryGem) return;
+
+    // Create the ability gem instance
+    const abilityGem = this.inventory.createGemInstance(inventoryGem);
+    if (!abilityGem) return;
+
+    // Calculate the actual slot index (personal slots are 0-2, nanobot slots are 3-5)
+    const actualSlot = slotType === 'personal' ? slotIndex : this.robot.getPersonalSlotCount() + slotIndex;
+
+    // Equip the gem
+    const success = this.robot.equipGem(abilityGem, actualSlot);
+    if (success) {
+      // Remove from inventory
+      this.inventory.removeGem(gemInstanceId);
+      // Sync state back to store
+      this.syncStateToStore();
+    }
+  }
+
+  /** Handle removing a gem from a robot slot */
+  private handleRemoveRobotGem(slotType: GemSlotType, slotIndex: number): void {
+    // Calculate the actual slot index
+    const actualSlot = slotType === 'personal' ? slotIndex : this.robot.getPersonalSlotCount() + slotIndex;
+
+    // Unequip the gem (returns the gem or null)
+    const gem = this.robot.getAbilitySystem().unequipGem(actualSlot);
+    if (!gem) return;
+
+    // Add back to inventory
+    this.inventory.addGem(gem.id);
+
+    // Sync state back to store
+    this.syncStateToStore();
+  }
+
+  /** Sync all game state to the React store */
+  private syncStateToStore(): void {
+    const store = gameStore.getState();
+
+    // Sync robot state
+    store.setRobot(this.buildRobotState());
+
+    // Sync nanobot state
+    store.setNanobots(this.buildNanobotStates());
+
+    // Sync inventory gems
+    store.setInventoryGems(this.buildInventoryGemStates());
+
+    // Sync essence
+    store.setPlayerEssence(this.currencyDisplay.getAmount());
+  }
+
+  /** Build robot state for the store */
+  private buildRobotState(): RobotState {
+    const personalSlotCount = this.robot.getPersonalSlotCount();
+    const nanobotSlotCount = this.robot.getNanobotSlotCount();
+
+    const personalGemSlots: (EquippedGemState | null)[] = [];
+    const nanobotGemSlots: (EquippedGemState | null)[] = [];
+
+    // Build personal gem slots
+    for (let i = 0; i < personalSlotCount; i++) {
+      const gem = this.robot.getAbilitySystem().getGemInSlot(i);
+      personalGemSlots.push(gem ? this.buildEquippedGemState(gem.id, i) : null);
+    }
+
+    // Build nanobot gem slots
+    for (let i = 0; i < nanobotSlotCount; i++) {
+      const actualSlot = personalSlotCount + i;
+      const gem = this.robot.getAbilitySystem().getGemInSlot(actualSlot);
+      nanobotGemSlots.push(gem ? this.buildEquippedGemState(gem.id, i) : null);
+    }
+
+    return {
+      hp: this.robot.getCurrentHp(),
+      maxHp: this.robot.getMaxHp(),
+      mp: this.robot.getCurrentMp(),
+      maxMp: this.robot.getMaxMp(),
+      personalGemSlots,
+      nanobotGemSlots,
+    };
+  }
+
+  /** Build equipped gem state for a gem */
+  private buildEquippedGemState(gemId: string, slot: number): EquippedGemState {
+    const entry = GemRegistry.get(gemId);
+    const visual = getGemVisual(gemId);
+
+    return {
+      id: gemId,
+      slot,
+      name: entry?.name ?? gemId,
+      description: entry?.description ?? '',
+      color: visual.color,
+    };
+  }
+
+  /** Build nanobot states for the store */
+  private buildNanobotStates(): NanobotState[] {
+    return this.swarmManager.getNanobots().map((nanobot, index) => ({
+      id: `nanobot_${index}`,
+      hp: nanobot.getCurrentHp(),
+      maxHp: nanobot.getMaxHp(),
+    }));
+  }
+
+  /** Build inventory gem states for the store */
+  private buildInventoryGemStates(): InventoryGemState[] {
+    return this.inventory.getGems().map(gem => {
+      const entry = GemRegistry.get(gem.gemId);
+      const visual = getGemVisual(gem.gemId);
+
+      return {
+        instanceId: gem.instanceId,
+        gemId: gem.gemId,
+        name: entry?.name ?? gem.gemId,
+        description: entry?.description ?? '',
+        essenceCost: entry?.essenceCost ?? 0,
+        color: visual.color,
+      };
+    });
   }
 }

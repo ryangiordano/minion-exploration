@@ -43,3 +43,20 @@ export interface InventoryGemState {
 
 /** Active menu types */
 export type ActiveMenu = 'none' | 'party' | 'pause' | 'main';
+
+/** Robot state for UI display */
+export interface RobotState {
+  hp: number;
+  maxHp: number;
+  mp: number;
+  maxMp: number;
+  personalGemSlots: (EquippedGemState | null)[];
+  nanobotGemSlots: (EquippedGemState | null)[];
+}
+
+/** Nanobot state for UI display */
+export interface NanobotState {
+  id: string;
+  hp: number;
+  maxHp: number;
+}

@@ -280,11 +280,12 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable,
     this.playPounceAnimation(context.target);
 
     // Get nanobot gems from robot and call their onAttackHit hooks
-    // We pass the robot as the attacker since the robot owns the gems
+    // Pass this nanobot as attacker so effects spawn from nanobot position
+    // and lifesteal heals the individual nanobot
     const nanobotGems = this.robot.getNanobotGems();
     for (const gem of nanobotGems) {
       gem.onAttackHit?.({
-        attacker: this.robot, // Use robot as attacker (it implements GemOwner)
+        attacker: this, // Nanobot is the attacker for gem effects
         target: context.target,
         damage: context.damage,
         scene: this.scene,

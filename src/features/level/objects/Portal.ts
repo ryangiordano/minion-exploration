@@ -147,7 +147,7 @@ export class Portal extends Phaser.GameObjects.Container {
   }
 
   /** Play the exit animation (shrink and disappear) - called after arriving at new floor */
-  public playExitAnimation(): void {
+  public playExitAnimation(onComplete?: () => void): void {
     this.scene.tweens.add({
       targets: this,
       scaleX: 0,
@@ -157,6 +157,7 @@ export class Portal extends Phaser.GameObjects.Container {
       ease: 'Back.easeIn',
       onComplete: () => {
         this.destroy();
+        onComplete?.();
       },
     });
   }

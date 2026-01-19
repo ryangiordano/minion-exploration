@@ -1,5 +1,8 @@
 import { create } from 'zustand';
-import type { MinionState, InventoryGemState, ActiveMenu } from '../../shared/types';
+import type { MinionState, InventoryGemState, ActiveMenu, RobotState, NanobotState } from '../../shared/types';
+
+/** Which gem slot category we're interacting with */
+export type GemSlotType = 'personal' | 'nanobot';
 
 interface GameStore {
   // Game state (Phaser writes, React reads)
@@ -7,6 +10,8 @@ interface GameStore {
   playerEssence: number;
   minions: MinionState[];
   inventoryGems: InventoryGemState[];
+  robot: RobotState | null;
+  nanobots: NanobotState[];
 
   // UI state
   activeMenu: ActiveMenu;
@@ -22,23 +27,31 @@ interface GameStore {
   setMinions: (minions: MinionState[]) => void;
   updateMinion: (id: string, state: Partial<MinionState>) => void;
   setInventoryGems: (gems: InventoryGemState[]) => void;
+  setRobot: (robot: RobotState) => void;
+  setNanobots: (nanobots: NanobotState[]) => void;
 
   // Command callbacks (Phaser registers handlers for these)
   _onEquipGem: ((minionId: string, gemId: string) => void) | null;
   _onRemoveGem: ((minionId: string, slot: number) => void) | null;
   _onRepairMinion: ((minionId: string) => void) | null;
+  _onEquipRobotGem: ((slotType: GemSlotType, slotIndex: number, gemInstanceId: string) => void) | null;
+  _onRemoveRobotGem: ((slotType: GemSlotType, slotIndex: number) => void) | null;
 
   // Register command handlers (called by Phaser on init)
   registerCommandHandlers: (handlers: {
     onEquipGem: (minionId: string, gemId: string) => void;
     onRemoveGem: (minionId: string, slot: number) => void;
     onRepairMinion: (minionId: string) => void;
+    onEquipRobotGem?: (slotType: GemSlotType, slotIndex: number, gemInstanceId: string) => void;
+    onRemoveRobotGem?: (slotType: GemSlotType, slotIndex: number) => void;
   }) => void;
 
   // Commands (React calls these, Phaser handles them)
   equipGem: (minionId: string, gemId: string) => void;
   removeGem: (minionId: string, slot: number) => void;
   repairMinion: (minionId: string) => void;
+  equipRobotGem: (slotType: GemSlotType, slotIndex: number, gemInstanceId: string) => void;
+  removeRobotGem: (slotType: GemSlotType, slotIndex: number) => void;
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -47,12 +60,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
   playerEssence: 0,
   minions: [],
   inventoryGems: [],
+  robot: null,
+  nanobots: [],
   activeMenu: 'none',
 
   // Command handlers (null until Phaser registers them)
   _onEquipGem: null,
   _onRemoveGem: null,
   _onRepairMinion: null,
+  _onEquipRobotGem: null,
+  _onRemoveRobotGem: null,
 
   // UI actions
   openPartyMenu: () => set({
@@ -79,11 +96,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   setInventoryGems: (gems) => set({ inventoryGems: gems }),
 
+  setRobot: (robot) => set({ robot }),
+
+  setNanobots: (nanobots) => set({ nanobots }),
+
   // Register command handlers
   registerCommandHandlers: (handlers) => set({
     _onEquipGem: handlers.onEquipGem,
     _onRemoveGem: handlers.onRemoveGem,
     _onRepairMinion: handlers.onRepairMinion,
+    _onEquipRobotGem: handlers.onEquipRobotGem ?? null,
+    _onRemoveRobotGem: handlers.onRemoveRobotGem ?? null,
   }),
 
   // Commands (React -> Phaser)
@@ -100,6 +123,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
   repairMinion: (minionId) => {
     const handler = get()._onRepairMinion;
     if (handler) handler(minionId);
+  },
+
+  equipRobotGem: (slotType, slotIndex, gemInstanceId) => {
+    const handler = get()._onEquipRobotGem;
+    if (handler) handler(slotType, slotIndex, gemInstanceId);
+  },
+
+  removeRobotGem: (slotType, slotIndex) => {
+    const handler = get()._onRemoveRobotGem;
+    if (handler) handler(slotType, slotIndex);
   },
 }));
 
