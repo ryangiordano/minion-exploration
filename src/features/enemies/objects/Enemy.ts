@@ -1,8 +1,17 @@
 import Phaser from 'phaser';
 import { Combatable, AttackConfig, AggroCapable } from '../../../core/types/interfaces';
 import { StatBar, HP_BAR_DEFAULTS, AttackBehavior, ThreatTracker, TargetedMovement, LevelingSystem, defaultXpCurve, FloatingText, DebuffManager, DebuffType, createDebuffVisual } from '../../../core/components';
+import { LAYERS } from '../../../core/config';
 import { EnemyTypeConfig, EnemyConfig } from '../types';
 import { LACKEY_CONFIG } from '../configs';
+
+/** Get flash color based on HP percentage (white -> yellow -> orange -> red) */
+function getHpFlashColor(hpPercent: number): number {
+  if (hpPercent > 0.75) return 0xffffff; // White
+  if (hpPercent > 0.5) return 0xffff00;  // Yellow
+  if (hpPercent > 0.25) return 0xff8800; // Orange
+  return 0xff0000;                        // Red
+}
 
 const DEFAULT_AGGRO_RADIUS = 150;
 const DEFAULT_ATTACK_RANGE = 5; // Must be within this distance (beyond touching) to attack
@@ -28,6 +37,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
 
   // Debuff system
   private debuffs: DebuffManager;
+
+  // Inner collision body - smaller than visual, prevents units from stacking at center
+  private collisionBody!: Phaser.Physics.Arcade.Image;
 
   constructor(scene: Phaser.Scene, x: number, y: number, config: EnemyConfig = {}) {
     super(scene, x, y, '');
@@ -74,8 +86,26 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
     // Calculate visual dimensions for 2x scale
     const visualRadius = radius * 2;
 
-    // Setup physics
+    // Setup physics (disable collision on main sprite - we use collisionBody instead)
     this.setCollideWorldBounds(true);
+
+    // Create inner collision body (half the visual radius)
+    // This prevents units from stacking at the enemy's center while still allowing them close enough to attack
+    const collisionRadius = visualRadius / 2;
+    const collisionTextureKey = `collision_circle_${collisionRadius}`;
+    if (!scene.textures.exists(collisionTextureKey)) {
+      const g = scene.add.graphics();
+      g.fillStyle(0xffffff, 1);
+      g.fillCircle(collisionRadius, collisionRadius, collisionRadius);
+      g.generateTexture(collisionTextureKey, collisionRadius * 2, collisionRadius * 2);
+      g.destroy();
+    }
+
+    this.collisionBody = scene.physics.add.image(x, y, collisionTextureKey);
+    this.collisionBody.setVisible(false); // Invisible - just for physics
+    this.collisionBody.setImmovable(false);
+    this.collisionBody.setCircle(collisionRadius);
+    this.collisionBody.setDepth(LAYERS.ENTITIES);
 
     // Setup movement component
     this.movement = new TargetedMovement(this, {
@@ -155,7 +185,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
   public getPrimaryAttack(): AttackConfig {
     const stats = this.leveling.getStats();
     return {
-      damage: Math.floor(stats.strength),
+      damage: Math.max(1, Math.floor(stats.strength)),
       cooldownMs: this.typeConfig.attackCooldown,
       effectType: 'melee'
     };
@@ -163,6 +193,11 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
 
   public getRadius(): number {
     return this.typeConfig.radius;
+  }
+
+  /** Get the inner collision body for physics collider setup */
+  public getCollisionBody(): Phaser.Physics.Arcade.Image {
+    return this.collisionBody;
   }
 
   public getAggroRadius(): number {
@@ -190,6 +225,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
   public takeDamage(amount: number): void {
     if (this.defeated) return;
 
+    // Calculate flash color based on HP BEFORE damage (shows current state)
+    const hpPercentBefore = this.hp / this.getMaxHp();
+    const flashColor = getHpFlashColor(hpPercentBefore);
+
     this.hp = Math.max(0, this.hp - amount);
     this.updateHpBar();
 
@@ -204,17 +243,50 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
       floatSpeed: 40,
     });
 
-    // Visual feedback: flash
-    this.scene.tweens.add({
-      targets: this,
-      alpha: 0.5,
-      duration: 50,
-      yoyo: true,
-    });
+    // Visual feedback: flash with HP-based color
+    this.setTint(flashColor);
+    this.scene.time.delayedCall(100, () => this.clearTint());
+
+    // Damage particle effect - expanding circle
+    this.playDamageParticle(flashColor);
 
     if (this.hp <= 0) {
       this.defeat();
     }
+  }
+
+  /** Play an expanding circle particle on damage */
+  private playDamageParticle(color: number): void {
+    const graphics = this.scene.add.graphics();
+    graphics.setDepth(LAYERS.EFFECTS);
+
+    const startRadius = this.typeConfig.radius * 0.5;
+    const endRadius = this.typeConfig.radius * 1.5;
+    const duration = 200;
+
+    let elapsed = 0;
+    const updateEvent = this.scene.time.addEvent({
+      delay: 16,
+      repeat: Math.floor(duration / 16),
+      callback: () => {
+        elapsed += 16;
+        const progress = Math.min(1, elapsed / duration);
+
+        // Ease out for smooth expansion
+        const easedProgress = 1 - Math.pow(1 - progress, 2);
+        const currentRadius = startRadius + (endRadius - startRadius) * easedProgress;
+        const alpha = 0.5 * (1 - progress);
+
+        graphics.clear();
+        graphics.fillStyle(color, alpha);
+        graphics.fillCircle(this.x, this.y, currentRadius);
+
+        if (progress >= 1) {
+          graphics.destroy();
+          updateEvent.destroy();
+        }
+      },
+    });
   }
 
   public isDefeated(): boolean {
@@ -266,6 +338,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
    */
   public update(delta: number): void {
     if (this.defeated) return;
+
+    // Sync collision body position with enemy
+    this.collisionBody.setPosition(this.x, this.y);
 
     // Update HP bar position
     this.updateHpBar();
@@ -353,6 +428,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
       this.onDeathCallback(this);
     }
 
+    // Death particle burst - multiple expanding circles
+    this.playDeathParticles();
+
     // Death animation
     this.scene.tweens.add({
       targets: this,
@@ -360,6 +438,59 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
       scale: 0.5,
       duration: 200,
       onComplete: () => this.destroy()
+    });
+  }
+
+  /** Play multiple expanding circles on death for a satisfying burst effect */
+  private playDeathParticles(): void {
+    const deathX = this.x;
+    const deathY = this.y;
+    const baseRadius = this.typeConfig.radius;
+
+    // Spawn 3 circles with staggered timing, different colors, and scattered positions
+    const colors = [0xff0000, 0xff8800, 0xffff00]; // Red, orange, yellow
+    const delays = [0, 50, 100];
+    const scales = [1.0, 0.7, 0.5];
+
+    colors.forEach((color, index) => {
+      // Random offset from death point (within the enemy's radius)
+      const offsetX = (Math.random() - 0.5) * baseRadius * 1.5;
+      const offsetY = (Math.random() - 0.5) * baseRadius * 1.5;
+      const particleX = deathX + offsetX;
+      const particleY = deathY + offsetY;
+
+      this.scene.time.delayedCall(delays[index], () => {
+        const graphics = this.scene.add.graphics();
+        graphics.setDepth(LAYERS.EFFECTS);
+
+        const startRadius = baseRadius * scales[index];
+        const endRadius = baseRadius * 3 * scales[index];
+        const duration = 300;
+
+        let elapsed = 0;
+        const updateEvent = this.scene.time.addEvent({
+          delay: 16,
+          repeat: Math.floor(duration / 16),
+          callback: () => {
+            elapsed += 16;
+            const progress = Math.min(1, elapsed / duration);
+
+            // Ease out for smooth expansion
+            const easedProgress = 1 - Math.pow(1 - progress, 2);
+            const currentRadius = startRadius + (endRadius - startRadius) * easedProgress;
+            const alpha = 0.6 * (1 - progress);
+
+            graphics.clear();
+            graphics.fillStyle(color, alpha);
+            graphics.fillCircle(particleX, particleY, currentRadius);
+
+            if (progress >= 1) {
+              graphics.destroy();
+              updateEvent.destroy();
+            }
+          },
+        });
+      });
     });
   }
 
@@ -374,6 +505,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
   destroy(fromScene?: boolean): void {
     this.hpBar.destroy();
     this.debuffs.destroy();
+    this.collisionBody.destroy();
     super.destroy(fromScene);
   }
 }

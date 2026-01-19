@@ -1,8 +1,11 @@
 import Phaser from 'phaser';
 import { Combatable, AttackConfig } from '../../../core/types/interfaces';
 import { AttackBehavior, AttackCallbackContext } from '../../../core/components/AttackBehavior';
+import { StatBar, HP_BAR_DEFAULTS } from '../../../core/components/StatBar';
+import { LAYERS } from '../../../core/config';
 import { AbilitySystem } from '../../../core/abilities/AbilitySystem';
 import { AbilityGem, GemOwner } from '../../../core/abilities/types';
+import { RobotVisual } from './RobotVisual';
 
 /** Visual radius for collision/display purposes */
 export const ROBOT_VISUAL_RADIUS = 20;
@@ -17,10 +20,14 @@ export interface RobotConfig {
 
 /**
  * The main player-controlled robot character.
- * Moves with WASD, auto-attacks nearby enemies, and has gem slots for itself and its nanobots.
+ * A rolling sphere that moves with WASD, auto-attacks nearby enemies,
+ * and has gem slots for itself and its nanobots.
  */
-export class Robot extends Phaser.Physics.Arcade.Sprite implements Combatable, GemOwner {
+export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, GemOwner {
   private readonly radius = ROBOT_VISUAL_RADIUS;
+
+  // Visual component
+  private visual: RobotVisual;
 
   // Movement
   private wasd?: {
@@ -50,15 +57,21 @@ export class Robot extends Phaser.Physics.Arcade.Sprite implements Combatable, G
   private readonly personalSlotCount: number;
   private readonly nanobotSlotCount: number;
 
+  // HP bar
+  private hpBar: StatBar;
+
   // Death callback
   private onDeathCallback?: () => void;
 
   // Damage flash
   private isFlashing = false;
 
+  // Movement control (disabled during portal transitions, etc.)
+  private movementEnabled = true;
+
   constructor(scene: Phaser.Scene, x: number, y: number, config: RobotConfig = {}) {
-    // Use the robot spritesheet
-    super(scene, x, y, 'robot');
+    // Create invisible physics body (we'll use RobotVisual for rendering)
+    super(scene, x, y, '__DEFAULT');
 
     this.maxHp = config.maxHp ?? 20;
     this.currentHp = this.maxHp;
@@ -68,15 +81,30 @@ export class Robot extends Phaser.Physics.Arcade.Sprite implements Combatable, G
     this.personalSlotCount = config.personalSlots ?? 2;
     this.nanobotSlotCount = config.nanobotSlots ?? 2;
 
-    // Add to scene
+    // Add physics body to scene
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
-    // Set initial frame (first expression) and scale down (sprite is 128x128)
-    this.setFrame(0);
-    this.setScale(0.35);
+    // Make the physics sprite invisible - visual is handled by RobotVisual
+    this.setAlpha(0);
 
-    // Setup physics
+    // Create the rolling sphere visual
+    this.visual = new RobotVisual(scene, x, y, {
+      radius: this.radius,
+    });
+    this.visual.setDepth(LAYERS.ENTITIES + 1);
+
+    // Create HP bar (slightly larger than nanobot bars)
+    this.hpBar = new StatBar(scene, {
+      ...HP_BAR_DEFAULTS,
+      width: 32,
+      height: 4,
+      offsetY: -28,
+    });
+
+    // Setup physics body
+    this.setCircle(this.radius);
+    this.setOffset(-this.radius, -this.radius);
     this.setCollideWorldBounds(true);
     this.setDrag(this.drag);
     this.setMaxVelocity(this.moveSpeed);
@@ -112,20 +140,30 @@ export class Robot extends Phaser.Physics.Arcade.Sprite implements Combatable, G
   update(delta: number): void {
     if (this.defeated) return;
 
+    // Sync visual position with physics body
+    this.visual.syncPosition(this.x, this.y);
+
+    // Update rolling effect based on velocity
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    this.visual.updateRoll(body.velocity.x, body.velocity.y, delta);
+
+    // Update HP bar position
+    this.hpBar.update(this.x, this.y, this.currentHp, this.maxHp, delta);
+
     this.handleMovement();
     this.handleCombat(delta);
     this.abilitySystem.update(delta);
   }
 
   private handleMovement(): void {
-    if (!this.wasd) return;
+    if (!this.wasd || !this.movementEnabled) {
+      this.setAcceleration(0, 0);
+      return;
+    }
 
     let accelerationX = 0;
     let accelerationY = 0;
 
-    // Note: A and D are used for commands, so only W/S for vertical
-    // Actually, let's use WASD for movement and different keys for commands
-    // We'll use WASD for movement as planned
     const left = this.wasd.left.isDown;
     const right = this.wasd.right.isDown;
     const up = this.wasd.up.isDown;
@@ -197,14 +235,18 @@ export class Robot extends Phaser.Physics.Arcade.Sprite implements Combatable, G
   }
 
   private handleAttack(context: AttackCallbackContext): void {
-    // Dispatch to ability system for gem hooks (personal gems only)
-    this.abilitySystem.onAttackHit(
-      context.target,
-      context.damage,
-      this.scene,
-      context.dealDamage,
-      context.damageDeferred
-    );
+    // Only dispatch to personal gems (nanobot gems are triggered by nanobots)
+    const personalGems = this.getPersonalGems();
+    for (const gem of personalGems) {
+      gem.onAttackHit?.({
+        attacker: this,
+        target: context.target,
+        damage: context.damage,
+        scene: this.scene,
+        dealDamage: context.dealDamage,
+        damageDeferred: context.damageDeferred,
+      });
+    }
 
     // Visual feedback - flash the target
     if ('setTint' in context.target) {
@@ -322,9 +364,9 @@ export class Robot extends Phaser.Physics.Arcade.Sprite implements Combatable, G
     if (this.isFlashing) return;
     this.isFlashing = true;
 
-    this.setTint(0xff0000);
+    this.visual.setTint(0xff0000);
     this.scene.time.delayedCall(100, () => {
-      this.clearTint();
+      this.visual.clearTint();
       this.isFlashing = false;
     });
   }
@@ -332,16 +374,18 @@ export class Robot extends Phaser.Physics.Arcade.Sprite implements Combatable, G
   private die(): void {
     this.defeated = true;
     this.attackBehavior.disengage();
+    this.hpBar.destroy();
 
-    // Death animation
+    // Death animation on visual
     this.scene.tweens.add({
-      targets: this,
+      targets: this.visual,
       alpha: 0,
       scaleX: 0,
       scaleY: 0,
       duration: 500,
       onComplete: () => {
         this.onDeathCallback?.();
+        this.visual.destroy();
         this.destroy();
       },
     });
@@ -350,5 +394,27 @@ export class Robot extends Phaser.Physics.Arcade.Sprite implements Combatable, G
   /** Register a callback for when the robot dies */
   public onDeath(callback: () => void): void {
     this.onDeathCallback = callback;
+  }
+
+  /** Disable player movement input */
+  public disableMovement(): void {
+    this.movementEnabled = false;
+    this.setVelocity(0, 0);
+    this.setAcceleration(0, 0);
+  }
+
+  /** Enable player movement input */
+  public enableMovement(): void {
+    this.movementEnabled = true;
+  }
+
+  /** Animate the robot's face to center (for portal transitions) */
+  public centerFace(duration = 400): void {
+    this.visual.centerFace(duration);
+  }
+
+  destroy(fromScene?: boolean): void {
+    this.visual?.destroy();
+    super.destroy(fromScene);
   }
 }

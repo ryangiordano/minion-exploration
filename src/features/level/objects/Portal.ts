@@ -6,6 +6,8 @@ const PORTAL_RADIUS = 40;
 
 export interface PortalConfig {
   onEnter?: () => void;
+  /** If true, skip spawn animation and start fully visible at current scale */
+  skipSpawnAnimation?: boolean;
 }
 
 /**
@@ -25,6 +27,9 @@ export class Portal extends Phaser.GameObjects.Container {
 
     scene.add.existing(this);
 
+    // Render below player and nanobots
+    this.setDepth(-10);
+
     // Create visual layers
     this.innerCircle = scene.add.circle(0, 0, PORTAL_RADIUS * 0.6, PORTAL_INNER_COLOR);
     this.innerCircle.setAlpha(0.8);
@@ -41,8 +46,10 @@ export class Portal extends Phaser.GameObjects.Container {
     // Animate the portal
     this.createAnimations();
 
-    // Spawn animation
-    this.playSpawnAnimation();
+    // Spawn animation (unless skipped for arrival portals)
+    if (!config.skipSpawnAnimation) {
+      this.playSpawnAnimation();
+    }
   }
 
   private createParticleEffect(): void {
@@ -126,27 +133,30 @@ export class Portal extends Phaser.GameObjects.Container {
     if (this.activated) return;
     this.activated = true;
 
-    // Grow large first
+    // Grow large (confetti will shoot at the same time from the transition)
     this.scene.tweens.add({
       targets: this,
-      scaleX: 2.5,
-      scaleY: 2.5,
+      scaleX: 3,
+      scaleY: 3,
+      duration: 600,
+      ease: 'Power2',
+    });
+
+    // Trigger the transition immediately (confetti shoots during growth)
+    this.config.onEnter?.();
+  }
+
+  /** Play the exit animation (shrink and disappear) - called after arriving at new floor */
+  public playExitAnimation(): void {
+    this.scene.tweens.add({
+      targets: this,
+      scaleX: 0,
+      scaleY: 0,
+      alpha: 0,
       duration: 400,
-      ease: 'Back.easeOut',
+      ease: 'Back.easeIn',
       onComplete: () => {
-        // Then shrink down while fading
-        this.scene.tweens.add({
-          targets: this,
-          scaleX: 0,
-          scaleY: 0,
-          alpha: 0,
-          duration: 300,
-          ease: 'Power2',
-          onComplete: () => {
-            this.config.onEnter?.();
-            this.destroy();
-          },
-        });
+        this.destroy();
       },
     });
   }

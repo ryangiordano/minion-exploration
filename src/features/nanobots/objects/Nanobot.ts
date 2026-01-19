@@ -2,7 +2,10 @@ import Phaser from 'phaser';
 import { Combatable, AttackConfig } from '../../../core/types/interfaces';
 import { TargetedMovement } from '../../../core/components/TargetedMovement';
 import { AttackBehavior, AttackCallbackContext } from '../../../core/components/AttackBehavior';
+import { StatBar, HP_BAR_DEFAULTS } from '../../../core/components/StatBar';
+import { LAYERS } from '../../../core/config';
 import { Robot } from '../../robot';
+import { GemOwner } from '../../../core/abilities/types';
 
 /** Visual radius for collision/display purposes */
 export const NANOBOT_VISUAL_RADIUS = 12;
@@ -21,9 +24,10 @@ export interface NanobotConfig {
 
 /**
  * A small nanobot that follows the robot and inherits abilities from
- * the robot's nanobot gem slots.
+ * the robot's nanobot gem slots. Implements GemOwner so it can be the
+ * executor of gem effects (projectiles spawn from nanobot position).
  */
-export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable {
+export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable, GemOwner {
   private readonly radius = NANOBOT_VISUAL_RADIUS;
 
   // Parent robot reference
@@ -53,11 +57,18 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable 
   // Death callback
   private onDeathCallback?: () => void;
 
+  // HP bar
+  private hpBar: StatBar;
+
   // Visual
   private isFlashing = false;
   private floatPhaseOffset: number;
   private readonly floatSpeed = 0.003; // Radians per ms
   private readonly floatDistance = 6;
+  private isPouncing = false;
+
+  // Freeze state (for portal transitions)
+  private frozen = false;
 
   constructor(scene: Phaser.Scene, x: number, y: number, config: NanobotConfig) {
     super(scene, x, y, 'nanobot');
@@ -75,6 +86,17 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable 
 
     // Scale down - the sprite is 128x128, we want it smaller (about 40px visual)
     this.setScale(0.3);
+
+    // Set depth above enemies for visibility
+    this.setDepth(LAYERS.ENTITIES + 1);
+
+    // Create tiny HP bar
+    this.hpBar = new StatBar(scene, {
+      ...HP_BAR_DEFAULTS,
+      width: 16,
+      height: 3,
+      offsetY: -20,
+    });
 
     // Setup physics
     this.setCollideWorldBounds(true);
@@ -106,10 +128,16 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable 
   update(delta: number): void {
     if (this.defeated) return;
 
+    // Update HP bar position
+    this.hpBar.update(this.x, this.y, this.currentHp, this.maxHp, delta);
+
     // Update floating animation (visual only, doesn't affect physics position)
     this.floatTime += delta;
     const floatOffset = Math.sin(this.floatTime * this.floatSpeed + this.floatPhaseOffset) * this.floatDistance;
     this.setOrigin(0.5, 0.5 - floatOffset / this.height);
+
+    // Skip behavior updates when frozen (during portal transitions)
+    if (this.frozen) return;
 
     switch (this.behaviorState) {
       case 'following':
@@ -248,6 +276,9 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable 
   }
 
   private handleAttack(context: AttackCallbackContext): void {
+    // Pounce animation toward the target
+    this.playPounceAnimation(context.target);
+
     // Get nanobot gems from robot and call their onAttackHit hooks
     // We pass the robot as the attacker since the robot owns the gems
     const nanobotGems = this.robot.getNanobotGems();
@@ -268,6 +299,43 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable 
       sprite.setTint(0xff0000);
       this.scene.time.delayedCall(100, () => sprite.clearTint());
     }
+  }
+
+  /** Play a quick pounce animation toward the target */
+  private playPounceAnimation(target: Combatable): void {
+    if (this.isPouncing || this.defeated) return;
+    this.isPouncing = true;
+
+    const startX = this.x;
+    const startY = this.y;
+
+    // Calculate pounce destination (30% of the way to target)
+    const dx = target.x - this.x;
+    const dy = target.y - this.y;
+    const pounceX = this.x + dx * 0.3;
+    const pounceY = this.y + dy * 0.3;
+
+    // Pounce forward
+    this.scene.tweens.add({
+      targets: this,
+      x: pounceX,
+      y: pounceY,
+      duration: 80,
+      ease: 'Power2',
+      onComplete: () => {
+        // Snap back to original position
+        this.scene.tweens.add({
+          targets: this,
+          x: startX,
+          y: startY,
+          duration: 100,
+          ease: 'Power1',
+          onComplete: () => {
+            this.isPouncing = false;
+          },
+        });
+      },
+    });
   }
 
   // --- Commands from SwarmManager ---
@@ -293,6 +361,19 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable 
   /** Get current state */
   public getBehaviorState(): NanobotState {
     return this.behaviorState;
+  }
+
+  /** Freeze the nanobot (stops all behavior updates, used during portal transitions) */
+  public freeze(): void {
+    this.frozen = true;
+    this.attackBehavior.disengage();
+    this.movement.stop();
+  }
+
+  /** Unfreeze the nanobot and return to following */
+  public unfreeze(): void {
+    this.frozen = false;
+    this.behaviorState = 'following';
   }
 
   // --- Combatable interface ---
@@ -339,6 +420,10 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable 
     this.defeated = true;
     this.attackBehavior.disengage();
     this.movement.stop();
+    this.hpBar.destroy();
+
+    // Death particle effect - red circle expanding and fading
+    this.playDeathParticle();
 
     // Death animation - shrink and fade
     this.scene.tweens.add({
@@ -354,8 +439,84 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable 
     });
   }
 
+  /** Play multiple red circle particles that expand and fade on death */
+  private playDeathParticle(): void {
+    const deathX = this.x;
+    const deathY = this.y;
+
+    // Spawn 3 scattered particles
+    const particleCount = 3;
+    for (let i = 0; i < particleCount; i++) {
+      // Random offset from death point
+      const offsetX = (Math.random() - 0.5) * this.radius * 2;
+      const offsetY = (Math.random() - 0.5) * this.radius * 2;
+      const particleX = deathX + offsetX;
+      const particleY = deathY + offsetY;
+
+      // Stagger the timing slightly
+      const delay = i * 30;
+
+      this.scene.time.delayedCall(delay, () => {
+        const graphics = this.scene.add.graphics();
+        graphics.setDepth(LAYERS.EFFECTS);
+
+        // Vary the size slightly
+        const sizeScale = 0.6 + Math.random() * 0.4;
+        const startRadius = this.radius * sizeScale;
+        const endRadius = this.radius * 3 * sizeScale;
+        const duration = 300;
+
+        let elapsed = 0;
+        const updateEvent = this.scene.time.addEvent({
+          delay: 16,
+          repeat: Math.floor(duration / 16),
+          callback: () => {
+            elapsed += 16;
+            const progress = Math.min(1, elapsed / duration);
+
+            // Ease out for smooth expansion
+            const easedProgress = 1 - Math.pow(1 - progress, 2);
+            const currentRadius = startRadius + (endRadius - startRadius) * easedProgress;
+            const alpha = 0.6 * (1 - progress);
+
+            graphics.clear();
+            graphics.fillStyle(0xff0000, alpha);
+            graphics.fillCircle(particleX, particleY, currentRadius);
+
+            if (progress >= 1) {
+              graphics.destroy();
+              updateEvent.destroy();
+            }
+          },
+        });
+      });
+    }
+  }
+
   /** Register a callback for when the nanobot dies */
   public onDeath(callback: () => void): void {
     this.onDeathCallback = callback;
+  }
+
+  // --- GemOwner interface (nanobots don't have MP, but need these for gem execution) ---
+
+  public getCurrentMp(): number {
+    return 0;
+  }
+
+  public getMaxMp(): number {
+    return 0;
+  }
+
+  public spendMp(_amount: number): boolean {
+    return false;
+  }
+
+  public heal(amount: number): void {
+    this.currentHp = Math.min(this.maxHp, this.currentHp + amount);
+  }
+
+  public getScene(): Phaser.Scene {
+    return this.scene;
   }
 }

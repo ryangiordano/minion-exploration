@@ -28,6 +28,9 @@ export class SwarmManager {
   /** Scatter radius when commanding nanobots to a location */
   private readonly scatterRadius = NANOBOT_VISUAL_RADIUS * 3;
 
+  /** Callback fired when a new nanobot is spawned */
+  private spawnCallback?: (nanobot: Nanobot) => void;
+
   constructor(config: SwarmManagerConfig) {
     this.scene = config.scene;
     this.robot = config.robot;
@@ -75,6 +78,10 @@ export class SwarmManager {
     });
 
     this.nanobots.push(nanobot);
+
+    // Fire spawn callback if registered
+    this.spawnCallback?.(nanobot);
+
     return nanobot;
   }
 
@@ -139,5 +146,24 @@ export class SwarmManager {
   /** Get all active nanobots */
   public getNanobots(): Nanobot[] {
     return [...this.nanobots];
+  }
+
+  /** Register a callback for when a new nanobot is spawned */
+  public onNanobotSpawn(callback: (nanobot: Nanobot) => void): void {
+    this.spawnCallback = callback;
+  }
+
+  /** Freeze all nanobots (stops behavior updates, used during portal transitions) */
+  public freezeAll(): void {
+    for (const nanobot of this.nanobots) {
+      nanobot.freeze();
+    }
+  }
+
+  /** Unfreeze all nanobots and return them to following */
+  public unfreezeAll(): void {
+    for (const nanobot of this.nanobots) {
+      nanobot.unfreeze();
+    }
   }
 }

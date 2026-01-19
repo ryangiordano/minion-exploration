@@ -12,6 +12,8 @@ export interface FloorTransitionConfig {
   transitionText?: string;
   /** Called while screen is black, before fade in - use for repositioning */
   onScreenBlack?: () => void;
+  /** World position to shoot confetti from (e.g., portal location) */
+  confettiOrigin?: { x: number; y: number };
 }
 
 const DEFAULT_CONFIG: Required<FloorTransitionConfig> = {
@@ -20,6 +22,7 @@ const DEFAULT_CONFIG: Required<FloorTransitionConfig> = {
   textDisplayDuration: 1500,
   transitionText: 'Delving deeper into the depths...',
   onScreenBlack: () => {},
+  confettiOrigin: { x: 0, y: 0 },
 };
 
 /**
@@ -55,35 +58,38 @@ export class FloorTransition {
   }
 
   private showConfetti(onComplete: () => void): void {
-    const { width, height } = this.scene.cameras.main;
-    const particleCount = 50;
-    const colors = [0xffd700, 0xff6b6b, 0x4ecdc4, 0x45b7d1, 0x96ceb4, 0xffeaa7];
+    const particleCount = 60;
+    const colors = [0x6644ff, 0xaa88ff, 0x4ecdc4, 0x45b7d1, 0xffd700, 0xffeaa7];
+    const origin = this.config.confettiOrigin;
 
-    // Spawn confetti particles
+    // Spawn confetti particles shooting outward from origin
     for (let i = 0; i < particleCount; i++) {
-      const x = Phaser.Math.Between(0, width);
-      const startY = -20;
       const color = Phaser.Math.RND.pick(colors);
-      const size = Phaser.Math.Between(4, 8);
+      const size = Phaser.Math.Between(4, 10);
 
-      const particle = this.scene.add.circle(x, startY, size, color);
-      particle.setScrollFactor(0);
+      // Start at the origin point (world coordinates)
+      const particle = this.scene.add.circle(origin.x, origin.y, size, color);
       particle.setDepth(2000);
       this.confettiParticles.push(particle);
 
-      // Animate falling with wobble
-      const targetY = height + 50;
-      const duration = Phaser.Math.Between(1000, this.config.confettiDuration);
-      const wobbleAmount = Phaser.Math.Between(30, 80);
+      // Shoot outward in random direction
+      const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+      const distance = Phaser.Math.Between(150, 400);
+      const targetX = origin.x + Math.cos(angle) * distance;
+      const targetY = origin.y + Math.sin(angle) * distance;
+
+      const duration = Phaser.Math.Between(800, this.config.confettiDuration);
 
       this.scene.tweens.add({
         targets: particle,
+        x: targetX,
         y: targetY,
-        x: x + Phaser.Math.Between(-wobbleAmount, wobbleAmount),
-        rotation: Phaser.Math.Between(-3, 3),
+        alpha: 0,
+        scale: { from: 1, to: 0.3 },
+        rotation: Phaser.Math.Between(-5, 5),
         duration,
-        ease: 'Power1',
-        delay: Phaser.Math.Between(0, 300),
+        ease: 'Power2',
+        delay: Phaser.Math.Between(0, 200),
         onComplete: () => {
           particle.destroy();
           const idx = this.confettiParticles.indexOf(particle);
