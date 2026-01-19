@@ -607,19 +607,54 @@ export class LevelScene extends Phaser.Scene {
     ];
 
     const clusterSpread = 15;
+    const minClusterDistance = 250;
+    const clusterCenters: { x: number; y: number }[] = [];
 
     for (const cluster of clusters) {
-      const centerX = Phaser.Math.Between(150, worldWidth - 150);
-      const centerY = Phaser.Math.Between(150, worldHeight - 150);
+      const center = this.findSpacedPosition(
+        clusterCenters,
+        minClusterDistance,
+        150, worldWidth - 150,
+        150, worldHeight - 150
+      );
+      clusterCenters.push(center);
 
       for (const denomination of cluster.denominations) {
         const offsetX = Phaser.Math.Between(-clusterSpread, clusterSpread);
         const offsetY = Phaser.Math.Between(-clusterSpread, clusterSpread);
 
-        const treasure = new Treasure(this, centerX + offsetX, centerY + offsetY, denomination);
+        const treasure = new Treasure(this, center.x + offsetX, center.y + offsetY, denomination);
         this.treasureCollection.add(treasure);
       }
     }
+  }
+
+  /** Find a position that maintains minimum distance from existing positions */
+  private findSpacedPosition(
+    existingPositions: { x: number; y: number }[],
+    minDistance: number,
+    minX: number, maxX: number,
+    minY: number, maxY: number,
+    maxAttempts = 50
+  ): { x: number; y: number } {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const x = Phaser.Math.Between(minX, maxX);
+      const y = Phaser.Math.Between(minY, maxY);
+
+      const isFarEnough = existingPositions.every(pos =>
+        Phaser.Math.Distance.Between(x, y, pos.x, pos.y) >= minDistance
+      );
+
+      if (isFarEnough) {
+        return { x, y };
+      }
+    }
+
+    // Fallback: return random position if we can't find a spaced one
+    return {
+      x: Phaser.Math.Between(minX, maxX),
+      y: Phaser.Math.Between(minY, maxY),
+    };
   }
 
   private spawnEnemiesFromLevelData(): void {
