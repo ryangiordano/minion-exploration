@@ -6,7 +6,7 @@ export interface RangedAttackConfig {
   projectileSpeed?: number;    // Pixels per second (default: 300)
   projectileSize?: number;     // Radius of projectile (default: 4)
   projectileColor?: number;    // Color of projectile (default: 0x88ccff)
-  attackRange?: number;        // Distance at which attacks can be made (default: 100)
+  attackRange?: number;        // Distance at which attacks can be made (default: 200)
 }
 
 /**
@@ -27,7 +27,7 @@ export class RangedAttackGem implements AbilityGem {
     this.projectileSpeed = config.projectileSpeed ?? 300;
     this.projectileSize = config.projectileSize ?? 4;
     this.projectileColor = config.projectileColor ?? 0x88ccff;
-    this.attackRange = config.attackRange ?? 100;
+    this.attackRange = config.attackRange ?? 200;
   }
 
   getAttackModifiers(): Partial<AttackConfig> {
