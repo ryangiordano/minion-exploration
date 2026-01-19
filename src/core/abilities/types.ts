@@ -5,7 +5,7 @@ import { Combatable, AttackConfig } from '../types/interfaces';
  * Stat modifier applied by gems
  */
 export interface StatModifier {
-  stat: 'maxHp' | 'maxMp' | 'strength' | 'dexterity' | 'magic' | 'resilience';
+  stat: 'maxHp' | 'maxMp' | 'strength' | 'dexterity' | 'magic' | 'resilience' | 'moveSpeed';
   type: 'flat' | 'percent';
   value: number;
 }

@@ -43,7 +43,7 @@ export interface KnockbackEffectParams extends EffectParams {
 }
 
 /** Visual style for projectile effects */
-export type ProjectileVisualType = 'pellet' | 'laser';
+export type ProjectileVisualType = 'pellet' | 'laser' | 'bolt';
 
 /** Muzzle flash configuration for projectile effects */
 export interface MuzzleFlashParams {
@@ -90,6 +90,8 @@ export interface ProjectileEffectParams extends EffectParams {
   laserWidth?: number;
   /** Laser glow size (for laser type) */
   laserGlowSize?: number;
+  /** Bolt length in pixels (for bolt type, default: 20) */
+  boltLength?: number;
 }
 
 /**

@@ -1,14 +1,14 @@
-import { AbilityGem, AttackHitContext } from '../types';
+import { AbilityGem, AttackHitContext, StatModifier } from '../types';
 import { AttackConfig } from '../../types/interfaces';
 import { projectileEffect } from '../effects';
 import { ProjectileVisualType } from '../effects/types';
 
 export interface RangedAttackConfig {
-  projectileSpeed?: number;    // Pixels per second (default: 300)
+  projectileSpeed?: number;    // Pixels per second (default: 400)
   projectileSize?: number;     // Radius of projectile (default: 4)
   projectileColor?: number;    // Color of projectile (default: 0xdd66ff - pinkish purple)
-  attackRange?: number;        // Distance at which attacks can be made (default: 300)
-  visualType?: ProjectileVisualType; // 'pellet' or 'laser' (default: 'laser')
+  attackRange?: number;        // Distance at which attacks can be made (default: 150)
+  visualType?: ProjectileVisualType; // 'pellet', 'laser', or 'bolt' (default: 'bolt')
 }
 
 /** Pinkish-purple color for laser visuals */
@@ -16,12 +16,13 @@ const LASER_COLOR = 0xdd66ff;
 
 /**
  * Attack modifier gem that makes attacks ranged projectiles.
- * By default fires instant laser beams with muzzle flash and particle effects.
+ * Fires traveling laser bolts with muzzle flash and particle effects.
+ * Tradeoff: Lower durability (HP) and slower movement speed.
  */
 export class RangedAttackGem implements AbilityGem {
   readonly id = 'ranged_attack';
   readonly name = 'Ranged Attack Gem';
-  readonly description = 'Attacks fire laser beams';
+  readonly description = 'Ranged attacks, but fragile and slow';
 
   private readonly projectileSpeed: number;
   private readonly projectileSize: number;
@@ -30,11 +31,20 @@ export class RangedAttackGem implements AbilityGem {
   private readonly visualType: ProjectileVisualType;
 
   constructor(config: RangedAttackConfig = {}) {
-    this.projectileSpeed = config.projectileSpeed ?? 300;
+    this.projectileSpeed = config.projectileSpeed ?? 400;
     this.projectileSize = config.projectileSize ?? 4;
     this.projectileColor = config.projectileColor ?? LASER_COLOR;
-    this.attackRange = config.attackRange ?? 300;
-    this.visualType = config.visualType ?? 'laser';
+    this.attackRange = config.attackRange ?? 150;
+    this.visualType = config.visualType ?? 'bolt';
+  }
+
+  getStatModifiers(): StatModifier[] {
+    return [
+      // Fragile - reduced max HP
+      { stat: 'maxHp', type: 'flat', value: -1 },
+      // Slower movement - 30% reduction
+      { stat: 'moveSpeed', type: 'percent', value: -0.3 },
+    ];
   }
 
   getAttackModifiers(): Partial<AttackConfig> {

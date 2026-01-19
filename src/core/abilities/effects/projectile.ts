@@ -28,6 +28,7 @@ export function projectileEffect(
     impactBurst,
     laserWidth = 3,
     laserGlowSize = 6,
+    boltLength = 20,
   } = params;
 
   // Show muzzle flash if configured
@@ -41,6 +42,11 @@ export function projectileEffect(
   }
 
   for (const target of targets) {
+    // Calculate angle and distance to target
+    const angle = Phaser.Math.Angle.Between(executor.x, executor.y, target.x, target.y);
+    const distance = Phaser.Math.Distance.Between(executor.x, executor.y, target.x, target.y);
+    const duration = (distance / speed) * 1000;
+
     if (visualType === 'laser') {
       // Instant laser beam
       const laser = new LaserBeam(scene);
@@ -54,6 +60,36 @@ export function projectileEffect(
 
       // Call onImpact immediately for laser (instant hit)
       onImpact?.();
+    } else if (visualType === 'bolt') {
+      // Traveling laser bolt - elongated beam shape
+      const bolt = scene.add.graphics();
+      bolt.setPosition(executor.x, executor.y);
+      bolt.setRotation(angle);
+
+      // Draw the bolt shape (elongated with glow)
+      // Glow layer
+      bolt.fillStyle(color, 0.3);
+      bolt.fillEllipse(0, 0, boltLength + 8, size * 2 + 6);
+      // Main bolt body
+      bolt.fillStyle(color, 0.9);
+      bolt.fillEllipse(0, 0, boltLength, size * 2);
+      // Bright core
+      bolt.fillStyle(0xffffff, 0.8);
+      bolt.fillEllipse(0, 0, boltLength * 0.6, size);
+
+      // Animate bolt to target
+      scene.tweens.add({
+        targets: bolt,
+        x: target.x,
+        y: target.y,
+        duration: Math.max(50, duration),
+        ease: 'Linear',
+        onComplete: () => {
+          showImpactEffects(scene, target.x, target.y, size, color, impactBurst);
+          bolt.destroy();
+          onImpact?.();
+        },
+      });
     } else {
       // Pellet projectile (traveling circle)
       const projectile = scene.add.circle(
@@ -63,15 +99,6 @@ export function projectileEffect(
         color
       );
       projectile.setAlpha(0.9);
-
-      // Calculate travel time based on distance and speed
-      const distance = Phaser.Math.Distance.Between(
-        executor.x,
-        executor.y,
-        target.x,
-        target.y
-      );
-      const duration = (distance / speed) * 1000;
 
       // Animate projectile to target
       scene.tweens.add({

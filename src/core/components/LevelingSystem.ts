@@ -163,18 +163,24 @@ export class LevelingSystem {
     // Start with base calculated stats
     const stats = { ...this.cachedStats };
 
+    // Filter to only stats that exist on UnitStats (exclude moveSpeed which is handled separately)
+    const validStats = ['maxHp', 'maxMp', 'strength', 'dexterity', 'magic', 'resilience'] as const;
+    const validMods = modifiers.filter(m => validStats.includes(m.stat as typeof validStats[number]));
+
     // Separate flat and percent modifiers
-    const flatMods = modifiers.filter(m => m.type === 'flat');
-    const percentMods = modifiers.filter(m => m.type === 'percent');
+    const flatMods = validMods.filter(m => m.type === 'flat');
+    const percentMods = validMods.filter(m => m.type === 'percent');
 
     // Apply flat modifiers first
     for (const mod of flatMods) {
-      stats[mod.stat] += mod.value;
+      const stat = mod.stat as keyof UnitStats;
+      stats[stat] += mod.value;
     }
 
     // Then apply percent modifiers
     for (const mod of percentMods) {
-      stats[mod.stat] *= (1 + mod.value / 100);
+      const stat = mod.stat as keyof UnitStats;
+      stats[stat] *= (1 + mod.value / 100);
     }
 
     // Floor all values

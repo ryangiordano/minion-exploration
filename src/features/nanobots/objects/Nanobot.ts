@@ -39,14 +39,15 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable,
 
   // Movement
   private movement: TargetedMovement;
-  private readonly moveSpeed = 140;
+  private readonly baseMoveSpeed = 140;
 
   // Behavior state (named to avoid conflict with Phaser's state property)
   private behaviorState: NanobotState = 'following';
 
-  // Health
+  // Health - base stats, modified by gems
+  private readonly baseMaxHp = 3;
+  private effectiveMaxHp = 3;
   private currentHp = 3;
-  private readonly maxHp = 3;
   private defeated = false;
 
   // Combat
@@ -101,9 +102,12 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable,
     // Setup physics
     this.setCollideWorldBounds(true);
 
-    // Setup movement
+    // Apply stat modifiers from gems
+    this.applyGemStatModifiers();
+
+    // Setup movement with effective speed
     this.movement = new TargetedMovement(this, {
-      speed: this.moveSpeed,
+      speed: this.getEffectiveMoveSpeed(),
       arrivalDistance: 8,
       slowdownDistance: 40,
       minSpeedScale: 0.4,
@@ -123,13 +127,62 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable,
     this.attackBehavior.onTargetDefeated(() => this.onTargetDefeated());
   }
 
+  /** Apply stat modifiers from robot's nanobot gems */
+  private applyGemStatModifiers(): void {
+    // Start with base stats
+    this.effectiveMaxHp = this.baseMaxHp;
+
+    // Apply modifiers from robot's nanobot gem slots
+    const nanobotGems = this.robot.getNanobotGems();
+    for (const gem of nanobotGems) {
+      const modifiers = gem.getStatModifiers?.() ?? [];
+      for (const mod of modifiers) {
+        if (mod.stat === 'maxHp') {
+          if (mod.type === 'flat') {
+            this.effectiveMaxHp += mod.value;
+          } else {
+            this.effectiveMaxHp *= (1 + mod.value);
+          }
+        }
+      }
+    }
+
+    // Ensure at least 1 HP
+    this.effectiveMaxHp = Math.max(1, Math.round(this.effectiveMaxHp));
+
+    // Set current HP to effective max (on spawn)
+    this.currentHp = this.effectiveMaxHp;
+  }
+
+  /** Get effective move speed after applying gem modifiers */
+  private getEffectiveMoveSpeed(): number {
+    let speed = this.baseMoveSpeed;
+
+    const nanobotGems = this.robot.getNanobotGems();
+    for (const gem of nanobotGems) {
+      const modifiers = gem.getStatModifiers?.() ?? [];
+      for (const mod of modifiers) {
+        if (mod.stat === 'moveSpeed') {
+          if (mod.type === 'flat') {
+            speed += mod.value;
+          } else {
+            speed *= (1 + mod.value);
+          }
+        }
+      }
+    }
+
+    // Ensure minimum speed
+    return Math.max(20, speed);
+  }
+
   private floatTime = 0;
 
   update(delta: number): void {
     if (this.defeated) return;
 
     // Update HP bar position
-    this.hpBar.update(this.x, this.y, this.currentHp, this.maxHp, delta);
+    this.hpBar.update(this.x, this.y, this.currentHp, this.effectiveMaxHp, delta);
 
     // Update floating animation (visual only, doesn't affect physics position)
     this.floatTime += delta;
@@ -384,7 +437,7 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable,
   }
 
   public getMaxHp(): number {
-    return this.maxHp;
+    return this.effectiveMaxHp;
   }
 
   public takeDamage(amount: number): void {
@@ -514,7 +567,7 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable,
   }
 
   public heal(amount: number): void {
-    this.currentHp = Math.min(this.maxHp, this.currentHp + amount);
+    this.currentHp = Math.min(this.effectiveMaxHp, this.currentHp + amount);
   }
 
   public getScene(): Phaser.Scene {
