@@ -3,6 +3,7 @@ import { ParticleBurst } from './ParticleBurst';
 import { FloatingText } from './FloatingText';
 import { ArcProjectile } from './ArcProjectile';
 import { ClickIndicator } from './ClickIndicator';
+import { CommandIndicator } from './CommandIndicator';
 
 /**
  * Convenience class that bundles all VFX primitives.
@@ -13,11 +14,13 @@ export class Vfx {
   readonly text: FloatingText;
   readonly arc: ArcProjectile;
   readonly click: ClickIndicator;
+  readonly command: CommandIndicator;
 
   constructor(scene: Phaser.Scene) {
     this.burst = new ParticleBurst(scene);
     this.text = new FloatingText(scene);
     this.arc = new ArcProjectile(scene);
     this.click = new ClickIndicator(scene);
+    this.command = new CommandIndicator(scene);
   }
 }

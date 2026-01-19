@@ -126,17 +126,27 @@ export class Portal extends Phaser.GameObjects.Container {
     if (this.activated) return;
     this.activated = true;
 
-    // Visual feedback
+    // Grow large first
     this.scene.tweens.add({
       targets: this,
-      scaleX: 1.5,
-      scaleY: 1.5,
-      alpha: 0,
-      duration: 300,
-      ease: 'Power2',
+      scaleX: 2.5,
+      scaleY: 2.5,
+      duration: 400,
+      ease: 'Back.easeOut',
       onComplete: () => {
-        this.config.onEnter?.();
-        this.destroy();
+        // Then shrink down while fading
+        this.scene.tweens.add({
+          targets: this,
+          scaleX: 0,
+          scaleY: 0,
+          alpha: 0,
+          duration: 300,
+          ease: 'Power2',
+          onComplete: () => {
+            this.config.onEnter?.();
+            this.destroy();
+          },
+        });
       },
     });
   }

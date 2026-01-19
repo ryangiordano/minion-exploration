@@ -10,6 +10,8 @@ export interface FloorTransitionConfig {
   textDisplayDuration?: number;
   /** Text to display during transition */
   transitionText?: string;
+  /** Called while screen is black, before fade in - use for repositioning */
+  onScreenBlack?: () => void;
 }
 
 const DEFAULT_CONFIG: Required<FloorTransitionConfig> = {
@@ -17,6 +19,7 @@ const DEFAULT_CONFIG: Required<FloorTransitionConfig> = {
   fadeDuration: 500,
   textDisplayDuration: 1500,
   transitionText: 'Delving deeper into the depths...',
+  onScreenBlack: () => {},
 };
 
 /**
@@ -29,7 +32,6 @@ const DEFAULT_CONFIG: Required<FloorTransitionConfig> = {
 export class FloorTransition {
   private scene: Phaser.Scene;
   private config: Required<FloorTransitionConfig>;
-  private overlay?: Phaser.GameObjects.Rectangle;
   private confettiParticles: Phaser.GameObjects.Arc[] = [];
 
   constructor(scene: Phaser.Scene, config: FloorTransitionConfig = {}) {
@@ -41,6 +43,8 @@ export class FloorTransition {
   play(onComplete: () => void): void {
     this.showConfetti(() => {
       this.fadeToBlack(() => {
+        // Call onScreenBlack while screen is black (for repositioning, spawning, etc.)
+        this.config.onScreenBlack();
         this.showText(() => {
           this.fadeIn(() => {
             onComplete();
@@ -93,20 +97,10 @@ export class FloorTransition {
   }
 
   private fadeToBlack(onComplete: () => void): void {
-    const { width, height } = this.scene.cameras.main;
+    const camera = this.scene.cameras.main;
 
-    // Create full-screen overlay
-    this.overlay = this.scene.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0);
-    this.overlay.setScrollFactor(0);
-    this.overlay.setDepth(2001);
-
-    this.scene.tweens.add({
-      targets: this.overlay,
-      alpha: 1,
-      duration: this.config.fadeDuration,
-      ease: 'Power2',
-      onComplete,
-    });
+    camera.once('camerafadeoutcomplete', onComplete);
+    camera.fadeOut(this.config.fadeDuration, 0, 0, 0);
   }
 
   private showText(onComplete: () => void): void {
@@ -146,29 +140,15 @@ export class FloorTransition {
   }
 
   private fadeIn(onComplete: () => void): void {
-    if (!this.overlay) {
-      onComplete();
-      return;
-    }
+    const camera = this.scene.cameras.main;
 
-    this.scene.tweens.add({
-      targets: this.overlay,
-      alpha: 0,
-      duration: this.config.fadeDuration,
-      ease: 'Power2',
-      onComplete: () => {
-        this.overlay?.destroy();
-        this.overlay = undefined;
-        onComplete();
-      },
-    });
+    camera.once('camerafadeincomplete', onComplete);
+    camera.fadeIn(this.config.fadeDuration, 0, 0, 0);
   }
 
-  /** Clean up any remaining particles/overlays */
+  /** Clean up any remaining particles */
   destroy(): void {
     this.confettiParticles.forEach(p => p.destroy());
     this.confettiParticles = [];
-    this.overlay?.destroy();
-    this.overlay = undefined;
   }
 }
