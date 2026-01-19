@@ -69,6 +69,9 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
   // Movement control (disabled during portal transitions, etc.)
   private movementEnabled = true;
 
+  // Face animation state
+  private isRolling = false;
+
   constructor(scene: Phaser.Scene, x: number, y: number, config: RobotConfig = {}) {
     // Create invisible physics body (we'll use RobotVisual for rendering)
     super(scene, x, y, '__DEFAULT');
@@ -88,11 +91,16 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
     // Make the physics sprite invisible - visual is handled by RobotVisual
     this.setAlpha(0);
 
-    // Create the rolling sphere visual
+    // Create the rolling sphere visual with sprite face
     this.visual = new RobotVisual(scene, x, y, {
       radius: this.radius,
+      faceSprite: 'robot-face',
+      faceFrame: 0,
     });
     this.visual.setDepth(LAYERS.ENTITIES + 1);
+
+    // Create face animations
+    this.createFaceAnimations();
 
     // Create HP bar (slightly larger than nanobot bars)
     this.hpBar = new StatBar(scene, {
@@ -135,6 +143,47 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
 
     this.attackBehavior.onAttack((context) => this.handleAttack(context));
     this.attackBehavior.onTargetDefeated(() => this.findNewTarget());
+
+    // Start idle blink animation
+    this.visual.playFaceAnimation('robot-blink');
+  }
+
+  /** Create face animations for blink and mouth */
+  private createFaceAnimations(): void {
+    // Only create animations once (they're global to the scene)
+    if (this.scene.anims.exists('robot-blink')) return;
+
+    // Blink animation: frames 0-2 (top row), loop with pause on frame 0
+    this.scene.anims.create({
+      key: 'robot-blink',
+      frames: [
+        { key: 'robot-face', frame: 0, duration: 2500 }, // Eyes open (hold longer)
+        { key: 'robot-face', frame: 1, duration: 80 },   // Half-closed
+        { key: 'robot-face', frame: 2, duration: 100 },  // Closed
+        { key: 'robot-face', frame: 1, duration: 80 },   // Half-closed
+      ],
+      repeat: -1,
+    });
+
+    // Mouth open animation: frames 3-4 (bottom row)
+    this.scene.anims.create({
+      key: 'robot-mouth-open',
+      frames: [
+        { key: 'robot-face', frame: 3, duration: 50 },  // Closed mouth
+        { key: 'robot-face', frame: 4, duration: 100 }, // Open mouth
+      ],
+      repeat: 0,
+    });
+
+    // Mouth close animation: reverse of open
+    this.scene.anims.create({
+      key: 'robot-mouth-close',
+      frames: [
+        { key: 'robot-face', frame: 4, duration: 50 },  // Open mouth
+        { key: 'robot-face', frame: 3, duration: 100 }, // Closed mouth
+      ],
+      repeat: 0,
+    });
   }
 
   update(delta: number): void {
@@ -147,12 +196,40 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
     const body = this.body as Phaser.Physics.Arcade.Body;
     this.visual.updateRoll(body.velocity.x, body.velocity.y, delta);
 
+    // Update face animation based on movement
+    this.updateFaceAnimation(body.velocity);
+
     // Update HP bar position
     this.hpBar.update(this.x, this.y, this.currentHp, this.maxHp, delta);
 
     this.handleMovement();
     this.handleCombat(delta);
     this.abilitySystem.update(delta);
+  }
+
+  /** Update face animation based on rolling state */
+  private updateFaceAnimation(velocity: Phaser.Math.Vector2): void {
+    const speed = velocity.length();
+    const movingThreshold = 20; // Minimum speed to be considered "rolling"
+
+    const wasRolling = this.isRolling;
+    this.isRolling = speed > movingThreshold;
+
+    // State changed - trigger animation
+    if (this.isRolling && !wasRolling) {
+      // Started rolling - open mouth
+      this.visual.playFaceAnimation('robot-mouth-open', false);
+    } else if (!this.isRolling && wasRolling) {
+      // Stopped rolling - close mouth, center face, then return to blink
+      this.visual.playFaceAnimation('robot-mouth-close', false);
+      this.visual.centerFace(300);
+      // After mouth close animation completes, return to blink
+      this.scene.time.delayedCall(150, () => {
+        if (!this.isRolling && !this.defeated) {
+          this.visual.playFaceAnimation('robot-blink');
+        }
+      });
+    }
   }
 
   private handleMovement(): void {

@@ -120,6 +120,13 @@ export class RobotVisual extends Phaser.GameObjects.Container {
         const offsetX = col * this.wrapDistance;
         const offsetY = row * this.wrapDistance;
         const sprite = this.scene.add.sprite(offsetX, offsetY, spriteKey, frame);
+
+        // Scale sprite to fit within the sphere diameter
+        // Use slightly smaller than diameter to give some padding
+        const targetSize = this.radius * 1.8;
+        const scale = targetSize / sprite.width;
+        sprite.setScale(scale);
+
         this.faceSprites.push(sprite);
         container.add(sprite);
       }
