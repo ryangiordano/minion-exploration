@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
-import { Combatable, AttackConfig } from '../../../core/types/interfaces';
-import { AttackBehavior, AttackCallbackContext } from '../../../core/components/AttackBehavior';
+import { Combatable } from '../../../core/types/interfaces';
 import { StatBar, HP_BAR_DEFAULTS } from '../../../core/components/StatBar';
 import { LAYERS } from '../../../core/config';
 import { AbilitySystem } from '../../../core/abilities/AbilitySystem';
@@ -20,7 +19,7 @@ export interface RobotConfig {
 
 /**
  * The main player-controlled robot character.
- * A rolling sphere that moves with WASD, auto-attacks nearby enemies,
+ * A rolling sphere that moves with WASD, can dash-attack with spacebar,
  * and has gem slots for itself and its nanobots.
  */
 export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, GemOwner {
@@ -47,10 +46,18 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
   private readonly maxMp: number;
   private defeated = false;
 
-  // Combat
-  private attackBehavior: AttackBehavior;
-  private nearbyEnemies: Combatable[] = [];
-  private readonly aggroRadius = 120;
+  // Dash ability
+  private readonly dashSpeed = 500;
+  private readonly dashDuration = 250; // ms
+  private readonly dashCooldown = 1000; // ms
+  private readonly dashDamage = 1;
+  private isDashing = false;
+  private isInvulnerable = false;
+  private dashCooldownTimer = 0;
+  private dashDirection = new Phaser.Math.Vector2(1, 0);
+  private lastFacingDirection = new Phaser.Math.Vector2(1, 0);
+  private damagedEnemiesDuringDash = new Set<Combatable>();
+  private onDashHitCallback?: (enemy: Combatable) => void;
 
   // Abilities - split between personal and nanobot slots
   private abilitySystem: AbilitySystem;
@@ -131,21 +138,144 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
     const totalSlots = this.personalSlotCount + this.nanobotSlotCount;
     this.abilitySystem = new AbilitySystem(this, { maxSlots: totalSlots });
 
-    // Setup attack behavior
-    this.attackBehavior = new AttackBehavior({
-      defaultAttack: {
-        damage: 2,
-        cooldownMs: 800,
-        effectType: 'melee',
-        range: 0,
-      },
-    });
-
-    this.attackBehavior.onAttack((context) => this.handleAttack(context));
-    this.attackBehavior.onTargetDefeated(() => this.findNewTarget());
+    // Setup dash input (spacebar)
+    this.setupDashInput();
 
     // Start idle blink animation
     this.visual.playFaceAnimation('robot-blink');
+  }
+
+  /** Setup spacebar to trigger dash */
+  private setupDashInput(): void {
+    const spaceKey = this.scene.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+    spaceKey?.on('down', () => {
+      this.tryDash();
+    });
+  }
+
+  /** Attempt to dash if not on cooldown and movement is enabled */
+  private tryDash(): void {
+    if (!this.movementEnabled || this.isDashing || this.dashCooldownTimer > 0 || this.defeated) {
+      return;
+    }
+
+    // Get direction from WASD input, or use last facing direction if standing still
+    const direction = this.getDashDirection();
+    if (direction.length() === 0) {
+      direction.copy(this.lastFacingDirection);
+    }
+    direction.normalize();
+    this.dashDirection.copy(direction);
+
+    this.executeDash();
+  }
+
+  /** Get dash direction from current WASD input */
+  private getDashDirection(): Phaser.Math.Vector2 {
+    const dir = new Phaser.Math.Vector2(0, 0);
+    if (!this.wasd) return dir;
+
+    if (this.wasd.left.isDown) dir.x -= 1;
+    if (this.wasd.right.isDown) dir.x += 1;
+    if (this.wasd.up.isDown) dir.y -= 1;
+    if (this.wasd.down.isDown) dir.y += 1;
+
+    return dir;
+  }
+
+  /** Execute the dash ability */
+  private executeDash(): void {
+    this.isDashing = true;
+    this.isInvulnerable = true;
+    this.damagedEnemiesDuringDash.clear();
+
+    // Set velocity in dash direction
+    this.setMaxVelocity(this.dashSpeed);
+    this.setVelocity(
+      this.dashDirection.x * this.dashSpeed,
+      this.dashDirection.y * this.dashSpeed
+    );
+    this.setAcceleration(0, 0);
+
+    // Visual feedback - tint during dash
+    this.visual.setTint(0x88ccff);
+
+    // End dash after duration
+    this.scene.time.delayedCall(this.dashDuration, () => {
+      this.endDash();
+    });
+  }
+
+  /** End the dash and start cooldown */
+  private endDash(): void {
+    this.isDashing = false;
+    this.isInvulnerable = false;
+    this.dashCooldownTimer = this.dashCooldown;
+
+    // Reset max velocity to normal
+    this.setMaxVelocity(this.moveSpeed);
+
+    // Temporarily reduce drag for smoother momentum carry-through
+    this.setDrag(200);
+    this.scene.time.delayedCall(200, () => {
+      this.setDrag(this.drag);
+    });
+
+    // Clear tint
+    this.visual.clearTint();
+  }
+
+  /** Check if an enemy should take dash damage */
+  public checkDashCollision(enemy: Combatable): void {
+    if (!this.isDashing) return;
+    if (this.damagedEnemiesDuringDash.has(enemy)) return;
+
+    // Mark as damaged so we only hit once per dash
+    this.damagedEnemiesDuringDash.add(enemy);
+
+    // Deal damage
+    enemy.takeDamage(this.dashDamage);
+
+    // Knockback enemy in dash direction (bowling effect)
+    this.applyKnockback(enemy);
+
+    // Notify callback for visual effects
+    this.onDashHitCallback?.(enemy);
+  }
+
+  /** Apply knockback to an enemy in the dash direction */
+  private applyKnockback(enemy: Combatable): void {
+    // Check if enemy has a physics body we can manipulate
+    if (!('body' in enemy)) return;
+
+    const targetBody = (enemy as unknown as Phaser.Physics.Arcade.Sprite).body as Phaser.Physics.Arcade.Body;
+    if (!targetBody) return;
+
+    const knockbackSpeed = 300;
+    const knockbackDuration = 150;
+
+    // Push in dash direction
+    targetBody.setVelocity(
+      this.dashDirection.x * knockbackSpeed,
+      this.dashDirection.y * knockbackSpeed
+    );
+
+    // Let the knockback decay naturally via drag, or reset after duration
+    this.scene.time.delayedCall(knockbackDuration, () => {
+      if (!enemy.isDefeated()) {
+        targetBody.setVelocity(0, 0);
+      }
+    });
+  }
+
+  /** Register callback for when dash hits an enemy */
+  public onDashHit(callback: (enemy: Combatable) => void): void {
+    this.onDashHitCallback = callback;
+  }
+
+  /** Check if robot is currently dashing */
+  public getIsDashing(): boolean {
+    return this.isDashing;
   }
 
   /** Create face animations for blink and mouth */
@@ -202,8 +332,21 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
     // Update HP bar position
     this.hpBar.update(this.x, this.y, this.currentHp, this.maxHp, delta);
 
-    this.handleMovement();
-    this.handleCombat(delta);
+    // Track facing direction when moving (not dashing)
+    if (!this.isDashing && body.velocity.length() > 20) {
+      this.lastFacingDirection.set(body.velocity.x, body.velocity.y).normalize();
+    }
+
+    // Update dash cooldown
+    if (this.dashCooldownTimer > 0) {
+      this.dashCooldownTimer -= delta;
+    }
+
+    // Only handle normal movement when not dashing
+    if (!this.isDashing) {
+      this.handleMovement();
+    }
+
     this.abilitySystem.update(delta);
   }
 
@@ -254,89 +397,7 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
     this.setAcceleration(accelerationX, accelerationY);
   }
 
-  private handleCombat(delta: number): void {
-    // Find target if not engaged
-    if (!this.attackBehavior.isEngaged()) {
-      this.findNewTarget();
-    }
 
-    // Update attack behavior
-    const effectiveAttack = this.getEffectiveAttack();
-    this.attackBehavior.update(delta, {
-      attackerX: this.x,
-      attackerY: this.y,
-      attackerRadius: this.radius,
-      effectiveAttack,
-    });
-  }
-
-  private findNewTarget(): void {
-    const closest = this.findClosestEnemy();
-    if (closest) {
-      this.attackBehavior.engage(closest);
-    }
-  }
-
-  private findClosestEnemy(): Combatable | null {
-    let closest: Combatable | null = null;
-    let closestDist = this.aggroRadius;
-
-    for (const enemy of this.nearbyEnemies) {
-      if (enemy.isDefeated()) continue;
-      const dist = Phaser.Math.Distance.Between(this.x, this.y, enemy.x, enemy.y);
-      if (dist < closestDist) {
-        closest = enemy;
-        closestDist = dist;
-      }
-    }
-
-    return closest;
-  }
-
-  private getEffectiveAttack(): AttackConfig {
-    const baseAttack: AttackConfig = {
-      damage: 2,
-      cooldownMs: 800,
-      effectType: 'melee',
-      range: 0,
-    };
-
-    // Apply modifiers from personal gems only (slots 0 to personalSlotCount-1)
-    const personalGems = this.getPersonalGems();
-    for (const gem of personalGems) {
-      const modifiers = gem.getAttackModifiers?.() ?? {};
-      Object.assign(baseAttack, modifiers);
-    }
-
-    return baseAttack;
-  }
-
-  private handleAttack(context: AttackCallbackContext): void {
-    // Only dispatch to personal gems (nanobot gems are triggered by nanobots)
-    const personalGems = this.getPersonalGems();
-    for (const gem of personalGems) {
-      gem.onAttackHit?.({
-        attacker: this,
-        target: context.target,
-        damage: context.damage,
-        scene: this.scene,
-        dealDamage: context.dealDamage,
-        damageDeferred: context.damageDeferred,
-      });
-    }
-
-    // Visual feedback - flash the target
-    if ('setTint' in context.target) {
-      const sprite = context.target as unknown as Phaser.GameObjects.Sprite;
-      sprite.setTint(0xff0000);
-      this.scene.time.delayedCall(100, () => sprite.clearTint());
-    }
-  }
-
-  /** Set the list of nearby enemies for auto-targeting */
-  public setNearbyEnemies(enemies: Combatable[]): void {
-    this.nearbyEnemies = enemies;
-  }
 
   // --- Gem Management ---
 
@@ -391,7 +452,7 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
   }
 
   public takeDamage(amount: number): void {
-    if (this.defeated) return;
+    if (this.defeated || this.isInvulnerable) return;
 
     this.currentHp = Math.max(0, this.currentHp - amount);
 
@@ -450,7 +511,6 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
 
   private die(): void {
     this.defeated = true;
-    this.attackBehavior.disengage();
     this.hpBar.destroy();
 
     // Death animation on visual

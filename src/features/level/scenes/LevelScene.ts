@@ -35,7 +35,7 @@ export class LevelScene extends Phaser.Scene {
   // Currency
   private currencyDisplay!: CurrencyDisplay;
   private floorDisplay!: FloorDisplay;
-  private readonly NANOBOT_COST = 5;
+  private readonly NANOBOT_COST = 20;
 
   // Loot
   private essenceDropper!: EssenceDropper;
@@ -118,7 +118,7 @@ export class LevelScene extends Phaser.Scene {
 
     // Add instructions
     const instructions = this.add.text(10, 10,
-      'WASD: Move | Q: Recall | Click: Send Nanobots | E: Spawn | Space: Collect | C: Menu',
+      'WASD: Move | Space: Dash | Shift: Collect | Q: Recall | Click: Send | E: Spawn | C: Menu',
       {
         fontSize: '12px',
         color: '#ffffff',
@@ -189,7 +189,6 @@ export class LevelScene extends Phaser.Scene {
 
     // Update robot
     if (!this.robot.isDefeated()) {
-      this.robot.setNearbyEnemies(activeEnemies);
       this.robot.update(delta);
     }
 
@@ -206,6 +205,11 @@ export class LevelScene extends Phaser.Scene {
       enemy.setNearbyTargets(targets);
       enemy.update(delta);
     });
+
+    // Check dash collisions with enemies
+    if (this.robot.getIsDashing()) {
+      this.checkDashCollisions(activeEnemies);
+    }
 
     // Check for collections - robot collects items
     if (!this.robot.isDefeated()) {
@@ -225,6 +229,26 @@ export class LevelScene extends Phaser.Scene {
     // Check win/lose conditions (only if not already transitioning)
     if (!this.isTransitioning) {
       this.checkWinLoseConditions(activeEnemies);
+    }
+  }
+
+  /** Check if dashing robot collides with any enemies */
+  private checkDashCollisions(enemies: Enemy[]): void {
+    const robotRadius = this.robot.getRadius();
+
+    for (const enemy of enemies) {
+      if (enemy.isDefeated()) continue;
+
+      const dist = Phaser.Math.Distance.Between(
+        this.robot.x, this.robot.y,
+        enemy.x, enemy.y
+      );
+
+      // Check if robot is touching enemy (using both radii)
+      const touchDistance = robotRadius + enemy.getRadius();
+      if (dist <= touchDistance) {
+        this.robot.checkDashCollision(enemy);
+      }
     }
   }
 
@@ -400,7 +424,7 @@ export class LevelScene extends Phaser.Scene {
     });
 
     this.collectionPulse
-      .bindKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
+      .bindKey(Phaser.Input.Keyboard.KeyCodes.SHIFT)
       .setEmitterSource(() => this.robot.isDefeated() ? [] : [this.robot])
       .setCollectibleSource(() => [
         ...this.treasureCollection.getItems(),
@@ -556,6 +580,17 @@ export class LevelScene extends Phaser.Scene {
     // Handle robot death
     this.robot.onDeath(() => {
       // Game over is handled in checkWinLoseConditions
+    });
+
+    // Handle dash hit effects
+    this.robot.onDashHit((enemy) => {
+      // Visual feedback - burst and flash
+      this.vfx.burst.play(enemy.x, enemy.y, 0x88ccff, { count: 6, distance: 20 });
+      if ('setTint' in enemy) {
+        const sprite = enemy as unknown as Phaser.GameObjects.Sprite;
+        sprite.setTint(0x88ccff);
+        this.time.delayedCall(100, () => sprite.clearTint());
+      }
     });
 
     // Create swarm manager
@@ -732,10 +767,10 @@ export class LevelScene extends Phaser.Scene {
     this.enemyCollisionGroup.add(collisionBody);
   }
 
-  /** Set up collisions between enemy collision bodies and robot/nanobots */
+  /** Set up collisions between enemy collision bodies and nanobots (robot passes through) */
   private setupEnemyToUnitCollisions(): void {
-    // Collide enemy collision bodies with robot
-    this.physics.add.collider(this.enemyCollisionGroup, this.robot);
+    // Robot does NOT collide with enemies - it passes through them freely
+    // Dash damage is handled separately via checkDashCollisions()
 
     // Collide enemy collision bodies with each nanobot
     // Note: We add colliders for existing nanobots and hook into swarm spawn for future ones
