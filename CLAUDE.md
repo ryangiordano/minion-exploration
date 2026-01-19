@@ -234,3 +234,52 @@ When evaluating game mechanics or features:
 - How does this fit into the core game loop?
 - What stories will players tell about this?
 - Is this adding depth or just complexity?
+
+## Git Safety Protocol
+
+**CRITICAL: Follow this protocol for EVERY commit to prevent data loss.**
+
+Git's staging area can have "sticky" deletions that persist across operations. Always verify before committing.
+
+### Before Every Commit
+
+1. **Check status first:**
+   ```bash
+   git status
+   ```
+
+2. **If you see unexpected staged changes (especially deletions), reset:**
+   ```bash
+   git reset HEAD
+   ```
+
+3. **Add only specific files you intend to commit:**
+   ```bash
+   git add path/to/file1.ts path/to/file2.ts
+   ```
+   **NEVER use `git add -A` or `git add .` without first verifying the staging area is clean.**
+
+4. **Verify what will be committed:**
+   ```bash
+   git diff --staged --stat
+   ```
+   - If you expect 1-2 files but see 100+, STOP and investigate
+   - If you see unexpected deletions, STOP and reset
+
+5. **Only then commit.**
+
+### Red Flags - Stop Immediately If You See:
+- `deleted:` entries you didn't intend to delete
+- Far more files staged than you modified
+- Files from unrelated parts of the codebase
+
+### Recovery If Something Goes Wrong:
+```bash
+# Undo the last commit but keep changes
+git reset --soft HEAD~1
+
+# Clear the staging area
+git reset HEAD
+
+# Then re-add only intended files
+```
