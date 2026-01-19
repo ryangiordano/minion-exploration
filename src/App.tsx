@@ -45,15 +45,18 @@ export function App() {
     };
   }, [updateCanvasBounds]);
 
-  const overlayStyle = canvasBounds
+  const overlayStyle: React.CSSProperties = canvasBounds
     ? {
-        position: 'absolute' as const,
-        top: canvasBounds.top,
-        left: canvasBounds.left,
-        width: canvasBounds.width,
-        height: canvasBounds.height,
+        position: 'absolute',
+        top: `${canvasBounds.top}px`,
+        left: `${canvasBounds.left}px`,
+        width: `${canvasBounds.width}px`,
+        height: `${canvasBounds.height}px`,
       }
-    : undefined;
+    : {
+        // Hide overlay until canvas bounds are known to prevent flash at window edges
+        visibility: 'hidden',
+      };
 
   return (
     <div className="game-container">
