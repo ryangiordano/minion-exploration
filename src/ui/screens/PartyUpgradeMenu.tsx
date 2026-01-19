@@ -142,6 +142,7 @@ function RobotPanel({
 }: RobotPanelProps) {
   const [inventoryPage, setInventoryPage] = useState(0);
   const [selectedSlot, setSelectedSlot] = useState<{ type: GemSlotType; index: number } | null>(null);
+  const [selectedGemId, setSelectedGemId] = useState<string | null>(null);
 
   // Get all equipped gem IDs to filter inventory
   const equippedGemIds = new Set<string>();
@@ -166,16 +167,28 @@ function RobotPanel({
     if (gem) {
       // Remove gem from slot
       removeRobotGem(type, index);
+      setSelectedGemId(null);
+    } else if (selectedGemId) {
+      // Gem is selected, equip it to this slot
+      equipRobotGem(type, index, selectedGemId);
+      setSelectedGemId(null);
+      setSelectedSlot(null);
     } else {
-      // Select slot for equipping
-      setSelectedSlot(selectedSlot?.type === type && selectedSlot?.index === index ? null : { type, index });
+      // Toggle slot selection
+      const isAlreadySelected = selectedSlot?.type === type && selectedSlot?.index === index;
+      setSelectedSlot(isAlreadySelected ? null : { type, index });
     }
   };
 
-  const handleEquipGem = (gemInstanceId: string) => {
+  const handleGemRowClick = (gemInstanceId: string) => {
     if (selectedSlot) {
+      // Slot is selected, equip this gem to it
       equipRobotGem(selectedSlot.type, selectedSlot.index, gemInstanceId);
       setSelectedSlot(null);
+      setSelectedGemId(null);
+    } else {
+      // Toggle gem selection
+      setSelectedGemId(selectedGemId === gemInstanceId ? null : gemInstanceId);
     }
   };
 
@@ -246,16 +259,16 @@ function RobotPanel({
               name={gem.name}
               description={gem.description}
               color={gem.color}
-              action={selectedSlot ? {
-                label: 'Equip',
-                onClick: () => handleEquipGem(gem.instanceId),
-                color: '#44ff44',
-              } : undefined}
+              isSelected={selectedGemId === gem.instanceId}
+              onClick={() => handleGemRowClick(gem.instanceId)}
             />
           ))
         )}
-        {!selectedSlot && availableGems.length > 0 && (
-          <div className="slot-hint">Select a slot above to equip gems</div>
+        {!selectedSlot && !selectedGemId && availableGems.length > 0 && (
+          <div className="slot-hint">Click a gem or slot to begin equipping</div>
+        )}
+        {selectedGemId && (
+          <div className="slot-hint">Now click an empty slot to equip</div>
         )}
       </Section>
     </Panel>
@@ -331,19 +344,19 @@ function NanobotOverviewPanel({ nanobots }: NanobotOverviewPanelProps) {
         {nanobots.length === 0 ? (
           <EmptyText>No nanobots spawned</EmptyText>
         ) : (
-          <div className="nanobot-list">
-            {nanobots.map((nanobot, index) => (
-              <div key={nanobot.id} className="nanobot-item">
-                <div className="nanobot-label">#{index + 1}</div>
-                <div className="nanobot-bar">
-                  <StatBar
-                    label=""
-                    current={nanobot.hp}
-                    max={nanobot.maxHp}
-                    color={nanobot.hp > 0 ? COLORS.hp : '#444444'}
-                    compact
-                  />
-                </div>
+          <div className="nanobot-grid">
+            {nanobots.map((nanobot) => (
+              <div
+                key={nanobot.id}
+                className={`nanobot-cell ${nanobot.hp <= 0 ? 'defeated' : ''}`}
+              >
+                <div
+                  className="nanobot-hp-fill"
+                  style={{
+                    width: `${(nanobot.hp / nanobot.maxHp) * 100}%`,
+                    backgroundColor: nanobot.hp > 0 ? COLORS.hp : '#444444',
+                  }}
+                />
               </div>
             ))}
           </div>

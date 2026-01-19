@@ -329,6 +329,29 @@ html, body, #root {
   opacity: 0.6;
 }
 
+.gem-row-clickable {
+  border-radius: 4px;
+  margin: 0 -6px;
+  padding: 6px;
+  transition: background-color 0.15s ease;
+}
+
+.gem-row-clickable:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.gem-row-selected {
+  background-color: rgba(68, 255, 68, 0.15);
+  border: 1px solid rgba(68, 255, 68, 0.4);
+  border-radius: 4px;
+  margin: 0 -6px;
+  padding: 5px;
+}
+
+.gem-row-selected:hover {
+  background-color: rgba(68, 255, 68, 0.2);
+}
+
 .gem-row-content {
   flex: 1;
   min-width: 0;
@@ -865,29 +888,47 @@ html, body, #root {
   font-weight: bold;
 }
 
-.nanobot-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-height: 200px;
-  overflow-y: auto;
+.nanobot-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
 }
 
-.nanobot-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.nanobot-cell {
+  height: 8px;
+  background: #2a2a3e;
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
 }
 
-.nanobot-label {
-  font-size: 10px;
-  color: #666;
-  width: 24px;
-  flex-shrink: 0;
+.nanobot-cell.defeated {
+  opacity: 0.4;
 }
 
-.nanobot-bar {
-  flex: 1;
+.nanobot-hp-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Sheen effect matching stat bars */
+.nanobot-hp-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.4) 50%,
+    transparent 100%
+  );
+  animation: stat-bar-sheen 3s ease-in-out infinite;
 }
 
 /* Compact stat bar */
