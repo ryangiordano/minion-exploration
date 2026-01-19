@@ -42,18 +42,54 @@ export interface KnockbackEffectParams extends EffectParams {
   duration?: number;
 }
 
+/** Visual style for projectile effects */
+export type ProjectileVisualType = 'pellet' | 'laser';
+
+/** Muzzle flash configuration for projectile effects */
+export interface MuzzleFlashParams {
+  /** Color of the muzzle flash (defaults to projectile color) */
+  color?: number;
+  /** Maximum size of the flash */
+  maxSize?: number;
+  /** Duration of grow phase in ms */
+  growDuration?: number;
+  /** Duration of shrink phase in ms */
+  shrinkDuration?: number;
+}
+
+/** Particle burst configuration for projectile effects */
+export interface ImpactBurstParams {
+  /** Number of particles */
+  count?: number;
+  /** Color of particles (defaults to projectile color) */
+  color?: number;
+  /** Speed range of particles */
+  speedMin?: number;
+  speedMax?: number;
+}
+
 /**
  * Projectile effect parameters
  */
 export interface ProjectileEffectParams extends EffectParams {
   /** Speed in pixels per second */
   speed?: number;
-  /** Projectile radius */
+  /** Projectile radius (for pellet type) */
   size?: number;
   /** Projectile color (hex) */
   color?: number;
   /** Callback when projectile reaches target */
   onImpact?: () => void;
+  /** Visual style: 'pellet' (default) or 'laser' */
+  visualType?: ProjectileVisualType;
+  /** Muzzle flash config (set to enable muzzle flash) */
+  muzzleFlash?: MuzzleFlashParams;
+  /** Impact particle burst config (set to enable particles) */
+  impactBurst?: ImpactBurstParams;
+  /** Laser beam width (for laser type) */
+  laserWidth?: number;
+  /** Laser glow size (for laser type) */
+  laserGlowSize?: number;
 }
 
 /**

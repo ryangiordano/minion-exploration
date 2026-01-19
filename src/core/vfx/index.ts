@@ -4,4 +4,6 @@ export { ArcProjectile, type ArcProjectileConfig } from './ArcProjectile';
 export { ClickIndicator, type ClickIndicatorConfig } from './ClickIndicator';
 export { TargetingIndicator, type TargetingIndicatorConfig } from './TargetingIndicator';
 export { CommandIndicator, type CommandIndicatorConfig } from './CommandIndicator';
+export { MuzzleFlash, type MuzzleFlashConfig } from './MuzzleFlash';
+export { LaserBeam, type LaserBeamConfig } from './LaserBeam';
 export { Vfx } from './Vfx';

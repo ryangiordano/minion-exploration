@@ -4,6 +4,8 @@ import { FloatingText } from './FloatingText';
 import { ArcProjectile } from './ArcProjectile';
 import { ClickIndicator } from './ClickIndicator';
 import { CommandIndicator } from './CommandIndicator';
+import { MuzzleFlash } from './MuzzleFlash';
+import { LaserBeam } from './LaserBeam';
 
 /**
  * Convenience class that bundles all VFX primitives.
@@ -15,6 +17,8 @@ export class Vfx {
   readonly arc: ArcProjectile;
   readonly click: ClickIndicator;
   readonly command: CommandIndicator;
+  readonly muzzle: MuzzleFlash;
+  readonly laser: LaserBeam;
 
   constructor(scene: Phaser.Scene) {
     this.burst = new ParticleBurst(scene);
@@ -22,5 +26,7 @@ export class Vfx {
     this.arc = new ArcProjectile(scene);
     this.click = new ClickIndicator(scene);
     this.command = new CommandIndicator(scene);
+    this.muzzle = new MuzzleFlash(scene);
+    this.laser = new LaserBeam(scene);
   }
 }
