@@ -45,9 +45,9 @@ export interface LevelGeneratorConfig {
 }
 
 const DEFAULT_CONFIG: LevelGeneratorConfig = {
-  basePackCount: 2,
+  basePackCount: 3,
   packsPerFloor: 0.5,
-  baseLackeysPerPack: 3,
+  baseLackeysPerPack: 4,
   lackeysPerFloor: 0.5,
   bruteStartFloor: 3,
   baseBruteChance: 0.3,
