@@ -14,6 +14,7 @@ import { LevelGenerator, LevelData } from '../../../core/level-generation';
 import { FloorTransition, DefeatTransition } from '../../../core/floor-transition';
 import { Vfx, TargetingIndicator } from '../../../core/vfx';
 import { CollectionSystem, CommandSystem } from '../systems';
+import { Portal } from '../objects/Portal';
 import { gameStore } from '../../../ui/store/gameStore';
 import { minionsToState, inventoryToGemState } from '../../../ui/store/stateHelpers';
 
@@ -63,6 +64,7 @@ export class LevelScene extends Phaser.Scene {
   private partyManager = new PartyManager(3);
   private levelGenerator = new LevelGenerator();
   private isTransitioning = false;
+  private portal?: Portal;
 
   // World dimensions (stored for respawning)
   private worldWidth = 1600;
@@ -234,9 +236,23 @@ export class LevelScene extends Phaser.Scene {
     // Update collection pulse (spacebar to expand collection radius)
     this.collectionPulse.update(delta);
 
+    // Check portal collision (minion entering portal triggers floor transition)
+    this.checkPortalCollision(activeMinions);
+
     // Check win/lose conditions (only if not already transitioning)
     if (!this.isTransitioning) {
       this.checkWinLoseConditions(activeMinions, activeEnemies);
+    }
+  }
+
+  private checkPortalCollision(minions: Minion[]): void {
+    if (!this.portal || this.portal.isActivated()) return;
+
+    for (const minion of minions) {
+      if (this.portal.containsPoint(minion.x, minion.y)) {
+        this.portal.enter();
+        break;
+      }
     }
   }
 
@@ -264,7 +280,19 @@ export class LevelScene extends Phaser.Scene {
   }
 
   private onFloorCleared(): void {
+    // Spawn portal at center - player can enter when ready
+    const centerX = this.worldWidth / 2;
+    const centerY = this.worldHeight / 2;
+
+    this.portal = new Portal(this, centerX, centerY, {
+      onEnter: () => this.enterPortal(),
+    });
+  }
+
+  /** Called when a minion enters the portal to proceed to next floor */
+  private enterPortal(): void {
     this.isTransitioning = true;
+    this.portal = undefined;
 
     // Heal all minions
     this.minions.forEach(minion => {
@@ -280,12 +308,51 @@ export class LevelScene extends Phaser.Scene {
     });
 
     transition.play(() => {
+      // Clear old loot
+      this.clearFloorLoot();
+
+      // Teleport minions to center
+      this.teleportMinionsToCenter();
+
       // Update floor display
       this.floorDisplay.setFloor(nextFloor);
 
-      // Spawn new enemies after transition completes
+      // Spawn new enemies and treasures
       this.spawnEnemiesFromLevelData();
+      this.spawnTreasures(this.worldWidth, this.worldHeight);
+
       this.isTransitioning = false;
+    });
+  }
+
+  /** Clear all remaining treasures and gems from the floor */
+  private clearFloorLoot(): void {
+    // Clear treasures
+    for (const treasure of this.treasureCollection.getItems()) {
+      treasure.destroy();
+    }
+    this.treasureCollection.clear();
+
+    // Clear gems
+    for (const gem of this.gemCollection.getItems()) {
+      gem.destroy();
+    }
+    this.gemCollection.clear();
+  }
+
+  /** Teleport all minions to center of the map */
+  private teleportMinionsToCenter(): void {
+    const centerX = this.worldWidth / 2;
+    const centerY = this.worldHeight / 2;
+    const spacing = MINION_VISUAL_RADIUS * 3;
+    const count = this.minions.length;
+
+    this.minions.forEach((minion, i) => {
+      const angle = (i / count) * Math.PI * 2;
+      const x = centerX + Math.cos(angle) * spacing;
+      const y = centerY + Math.sin(angle) * spacing;
+      minion.setPosition(x, y);
+      minion.send({ type: 'ARRIVED' }); // Clear movement state
     });
   }
 
