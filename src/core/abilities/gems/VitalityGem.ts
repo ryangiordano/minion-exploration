@@ -1,22 +1,22 @@
 import { AbilityGem, StatModifier } from '../types';
 
 /**
- * Passive gem that increases max HP
+ * Passive gem that increases max HP by a percentage
  */
 export class VitalityGem implements AbilityGem {
   readonly id = 'vitality';
   readonly name = 'Vitality Gem';
-  readonly description = '+2 Max HP';
+  readonly description = '+10% Max HP';
 
-  private readonly hpBonus: number;
+  private readonly hpBonusPercent: number;
 
-  constructor(hpBonus: number = 2) {
-    this.hpBonus = hpBonus;
+  constructor(hpBonusPercent: number = 0.10) {
+    this.hpBonusPercent = hpBonusPercent;
   }
 
   getStatModifiers(): StatModifier[] {
     return [
-      { stat: 'maxHp', type: 'flat', value: this.hpBonus }
+      { stat: 'maxHp', type: 'percent', value: this.hpBonusPercent }
     ];
   }
 }

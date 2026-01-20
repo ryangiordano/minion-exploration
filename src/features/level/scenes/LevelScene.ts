@@ -609,7 +609,7 @@ export class LevelScene extends Phaser.Scene {
 
     // Spawn robot
     this.robot = new Robot(this, centerX, centerY, {
-      maxHp: 20,
+      maxHp: 5,
       moveSpeed: 160,
       personalSlots: 3,
       nanobotSlots: 3,

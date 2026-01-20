@@ -41,7 +41,7 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
 
   // Health and MP
   private currentHp: number;
-  private readonly maxHp: number;
+  private readonly baseMaxHp: number;
   private currentMp: number;
   private readonly maxMp: number;
   private defeated = false;
@@ -83,8 +83,8 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
     // Create invisible physics body (we'll use RobotVisual for rendering)
     super(scene, x, y, '__DEFAULT');
 
-    this.maxHp = config.maxHp ?? 20;
-    this.currentHp = this.maxHp;
+    this.baseMaxHp = config.maxHp ?? 20;
+    this.currentHp = this.baseMaxHp;
     this.maxMp = 10;
     this.currentMp = this.maxMp;
     this.moveSpeed = config.moveSpeed ?? 160;
@@ -236,6 +236,9 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
     // Deal damage
     enemy.takeDamage(this.dashDamage);
 
+    // Trigger gem effects (lifesteal, etc.)
+    this.abilitySystem.onAttackHit(enemy, this.dashDamage, this.scene);
+
     // Knockback enemy in dash direction (bowling effect)
     this.applyKnockback(enemy);
 
@@ -333,7 +336,7 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
     this.updateFaceAnimation(body.velocity);
 
     // Update HP bar position
-    this.hpBar.update(this.x, this.y, this.currentHp, this.maxHp, delta);
+    this.hpBar.update(this.x, this.y, this.currentHp, this.getMaxHp(), delta);
 
     // Track facing direction when moving (not dashing)
     if (!this.isDashing && body.velocity.length() > 20) {
@@ -451,7 +454,24 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
   }
 
   public getMaxHp(): number {
-    return this.maxHp;
+    // Apply stat modifiers from equipped gems
+    const modifiers = this.abilitySystem.getStatModifiers();
+    let flatBonus = 0;
+    let percentBonus = 0;
+
+    for (const mod of modifiers) {
+      if (mod.stat === 'maxHp') {
+        if (mod.type === 'flat') {
+          flatBonus += mod.value;
+        } else if (mod.type === 'percent') {
+          percentBonus += mod.value;
+        }
+      }
+    }
+
+    // Apply flat first, then percent
+    const afterFlat = this.baseMaxHp + flatBonus;
+    return Math.floor(afterFlat * (1 + percentBonus));
   }
 
   public takeDamage(amount: number): void {
@@ -468,7 +488,7 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
   }
 
   public heal(amount: number): void {
-    this.currentHp = Math.min(this.maxHp, this.currentHp + amount);
+    this.currentHp = Math.min(this.getMaxHp(), this.currentHp + amount);
   }
 
   public isDefeated(): boolean {
