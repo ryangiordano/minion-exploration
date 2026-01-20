@@ -122,9 +122,9 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
       offsetY: -28,
     });
 
-    // Setup physics body
-    this.setCircle(this.radius);
-    this.setOffset(-this.radius, -this.radius);
+    // Setup physics body - circle slightly larger than visual for better collision feel
+    const collisionRadius = this.radius * 1.2;
+    this.setCircle(collisionRadius, -collisionRadius / 4, -collisionRadius / 4);
     this.setCollideWorldBounds(true);
     this.setDrag(this.drag);
     this.setMaxVelocity(this.moveSpeed);
@@ -646,6 +646,17 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
   /** Get the visual for direct tween access (portal animations) */
   public getVisual(): Phaser.GameObjects.Container {
     return this.visual;
+  }
+
+  /** Set visibility of orbital gem displays (for portal animations) */
+  public setGemDisplaysVisible(visible: boolean): void {
+    this.personalGemDisplay?.setVisible(visible);
+    this.nanobotGemDisplay?.setVisible(visible);
+  }
+
+  /** Clear any visual tint (for portal animations) */
+  public clearVisualTint(): void {
+    this.visual.clearTint();
   }
 
   destroy(fromScene?: boolean): void {
