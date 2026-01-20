@@ -1,4 +1,4 @@
-import { AbilityGem, AbilityDefinition, AttackHitContext } from '../types';
+import { AbilityGem, AbilityDefinition, AttackHitContext, CooldownInfo } from '../types';
 import { healEffect } from '../effects';
 
 export interface HealPulseConfig {
@@ -94,6 +94,18 @@ export class HealPulseGem implements AbilityGem {
         threshold: this.hpThreshold,
       },
       effectKey: 'heal_pulse',
+    };
+  }
+
+  /** Get cooldown info for UI display */
+  getCooldownInfo(): CooldownInfo {
+    const now = Date.now();
+    const elapsed = now - this.lastTriggerTime;
+    const remaining = Math.max(0, this.cooldownMs - elapsed);
+
+    return {
+      remaining,
+      total: this.cooldownMs,
     };
   }
 }

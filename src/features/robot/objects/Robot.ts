@@ -5,6 +5,7 @@ import { LAYERS } from '../../../core/config';
 import { AbilitySystem } from '../../../core/abilities/AbilitySystem';
 import { AbilityGem, GemOwner, AttackHitContext } from '../../../core/abilities/types';
 import { RobotVisual } from './RobotVisual';
+import { OrbitalGemDisplay } from './OrbitalGemDisplay';
 
 /** Visual radius for collision/display purposes */
 export const ROBOT_VISUAL_RADIUS = 20;
@@ -79,6 +80,10 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
   // Face animation state
   private isRolling = false;
 
+  // Orbital gem displays
+  private personalGemDisplay: OrbitalGemDisplay;  // Flat orbit, always visible
+  private nanobotGemDisplay: OrbitalGemDisplay;   // 3D orbit, front/behind
+
   constructor(scene: Phaser.Scene, x: number, y: number, config: RobotConfig = {}) {
     // Create invisible physics body (we'll use RobotVisual for rendering)
     super(scene, x, y, '__DEFAULT');
@@ -137,6 +142,18 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
     // Setup ability system with combined slots
     const totalSlots = this.personalSlotCount + this.nanobotSlotCount;
     this.abilitySystem = new AbilitySystem(this, { maxSlots: totalSlots });
+
+    // Create orbital gem displays
+    // Personal gems: flat orbit, always visible, closer to robot
+    this.personalGemDisplay = new OrbitalGemDisplay(scene, () => this.getPersonalGems(), {
+      mode: 'flat',
+      orbitDistance: 28,
+    });
+    // Nanobot gems: 3D orbit, goes in front and behind robot, farther out
+    this.nanobotGemDisplay = new OrbitalGemDisplay(scene, () => this.getNanobotGems(), {
+      mode: '3d',
+      orbitDistance: 38,
+    });
 
     // Setup dash input (spacebar)
     this.setupDashInput();
@@ -352,6 +369,10 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
     if (!this.isDashing) {
       this.handleMovement();
     }
+
+    // Update orbital gem displays
+    this.personalGemDisplay.update(this.x, this.y, delta);
+    this.nanobotGemDisplay.update(this.x, this.y, delta);
 
     // Note: Robot doesn't call abilitySystem.update() because:
     // - Personal gems are passive or triggered on dash hit
@@ -608,6 +629,8 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
 
   destroy(fromScene?: boolean): void {
     this.visual?.destroy();
+    this.personalGemDisplay?.destroy();
+    this.nanobotGemDisplay?.destroy();
     super.destroy(fromScene);
   }
 }

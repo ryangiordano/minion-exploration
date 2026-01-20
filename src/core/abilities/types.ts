@@ -125,7 +125,20 @@ export interface AbilityGem {
   // Attack modifiers (range, effectType, etc.)
   getAttackModifiers?(): Partial<AttackConfig>;
 
+  // Cooldown info for UI display (for gems with manual cooldown tracking)
+  getCooldownInfo?(): CooldownInfo | null;
+
   // DEPRECATED: Use getAbility() instead. Will be removed.
   // Only kept for backwards compatibility during migration.
   onUpdate?(owner: GemOwner, delta: number): void;
+}
+
+/**
+ * Cooldown info for UI display
+ */
+export interface CooldownInfo {
+  /** Time remaining in ms (0 = ready) */
+  remaining: number;
+  /** Total cooldown duration in ms */
+  total: number;
 }
