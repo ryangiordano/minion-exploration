@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { Treasure } from './objects/Treasure';
+import { Treasure, EssenceDenomination } from './objects/Treasure';
+import { LAYERS } from '../../core/config';
 
 export interface EssenceDropConfig {
   /** Time between each essence spawn in ms */
@@ -16,6 +17,8 @@ export interface EssenceDropConfig {
   dropDistance?: [number, number];
   /** Min/max roll distance after landing */
   rollDistance?: [number, number];
+  /** Min/max rotation in radians during drop */
+  rotation?: [number, number];
 }
 
 const DEFAULT_CONFIG: Required<EssenceDropConfig> = {
@@ -23,9 +26,10 @@ const DEFAULT_CONFIG: Required<EssenceDropConfig> = {
   arcDuration: 300,
   rollDuration: 600,
   settleDelay: 100,
-  arcHeight: [40, 80],
-  dropDistance: [40, 80],
-  rollDistance: [60, 120],
+  arcHeight: [20, 40],
+  dropDistance: [15, 35],
+  rollDistance: [20, 40],
+  rotation: [Math.PI, Math.PI * 3],
 };
 
 export class EssenceDropper {
@@ -39,17 +43,52 @@ export class EssenceDropper {
 
   /** Drops essence at the given position, calls onSpawn for each treasure as it's created */
   drop(x: number, y: number, amount: number, onSpawn?: (treasure: Treasure) => void): void {
-    for (let i = 0; i < amount; i++) {
-      this.scene.time.delayedCall(i * this.config.spawnInterval, () => {
-        const treasure = this.spawnEssence(x, y);
+    // Convert amount to mixed denominations for variety
+    const denominations = this.convertToDenominations(amount);
+
+    let delay = 0;
+    for (const denom of denominations) {
+      this.scene.time.delayedCall(delay, () => {
+        const treasure = this.spawnEssence(x, y, denom);
         onSpawn?.(treasure);
       });
+      delay += this.config.spawnInterval;
     }
   }
 
-  private spawnEssence(originX: number, originY: number): Treasure {
-    const treasure = new Treasure(this.scene, originX, originY);
+  /** Convert a total value into mixed denominations for visual variety */
+  private convertToDenominations(total: number): EssenceDenomination[] {
+    const result: EssenceDenomination[] = [];
+    let remaining = total;
+
+    // Use 10s for larger amounts
+    while (remaining >= 10 && result.length < 2) {
+      result.push(10);
+      remaining -= 10;
+    }
+
+    // Use 5s
+    while (remaining >= 5 && result.length < 4) {
+      result.push(5);
+      remaining -= 5;
+    }
+
+    // Fill rest with 1s
+    while (remaining > 0) {
+      result.push(1);
+      remaining -= 1;
+    }
+
+    // Shuffle for visual variety
+    return result.sort(() => Math.random() - 0.5);
+  }
+
+  private spawnEssence(originX: number, originY: number, denomination: EssenceDenomination = 1): Treasure {
+    const treasure = new Treasure(this.scene, originX, originY, denomination);
     treasure.setCollectible(false);
+
+    // Start above entities while flying through the air
+    treasure.setDepth(LAYERS.EFFECTS);
 
     // Random direction and distances
     const angle = Math.random() * Math.PI * 2;
@@ -73,6 +112,23 @@ export class EssenceDropper {
     // Final position after roll (same direction)
     const finalX = landX + Math.cos(angle) * rollDist;
     const finalY = landY + Math.sin(angle) * rollDist;
+
+    // Random rotation amount and direction
+    const rotationAmount = Phaser.Math.FloatBetween(
+      this.config.rotation[0],
+      this.config.rotation[1]
+    );
+    const rotationDirection = Math.random() < 0.5 ? 1 : -1;
+    const totalRotation = rotationAmount * rotationDirection;
+
+    // Rotation tween - spins during arc and roll, then settles
+    const totalDuration = this.config.arcDuration + this.config.rollDuration;
+    this.scene.tweens.add({
+      targets: treasure,
+      rotation: totalRotation,
+      duration: totalDuration,
+      ease: 'Cubic.out',
+    });
 
     // Arc phase: pop up and out
     this.animateArc(treasure, originX, originY, landX, landY, arcHeight, () => {
@@ -100,14 +156,17 @@ export class EssenceDropper {
     const midX = (startX + endX) / 2;
     const controlY = Math.min(startY, endY) - arcHeight;
 
-    // Scale up slightly during arc for "pop" feel
+    // Random peak scale for variety (some pop big, some small)
+    const peakScale = Phaser.Math.FloatBetween(1.1, 1.4);
+    const finalScale = Phaser.Math.FloatBetween(0.85, 1.0);
+
+    // Scale up during arc (exploding up)
     this.scene.tweens.add({
       targets: treasure,
-      scaleX: 1.2,
-      scaleY: 1.2,
-      duration: this.config.arcDuration * 0.3,
-      yoyo: true,
-      ease: 'Sine.out',
+      scaleX: peakScale,
+      scaleY: peakScale,
+      duration: this.config.arcDuration * 0.5,
+      ease: 'Quad.out',
     });
 
     // Position along bezier curve
@@ -132,7 +191,20 @@ export class EssenceDropper {
 
         treasure.setPosition(x, y);
       },
-      onComplete,
+      onComplete: () => {
+        // Move below entities now that it's on the ground
+        treasure.setDepth(LAYERS.GROUND);
+
+        // Scale down as it lands (settling to ground)
+        this.scene.tweens.add({
+          targets: treasure,
+          scaleX: finalScale,
+          scaleY: finalScale,
+          duration: this.config.rollDuration * 0.6,
+          ease: 'Bounce.out',
+        });
+        onComplete();
+      },
     });
   }
 

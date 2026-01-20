@@ -251,6 +251,9 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
     const targetBody = (enemy as unknown as Phaser.Physics.Arcade.Sprite).body as Phaser.Physics.Arcade.Body;
     if (!targetBody) return;
 
+    // Static bodies can't be knocked back
+    if (!('setVelocity' in targetBody)) return;
+
     const knockbackSpeed = 300;
     const knockbackDuration = 150;
 

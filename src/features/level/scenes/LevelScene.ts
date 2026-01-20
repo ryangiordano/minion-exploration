@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { Treasure, EssenceDropper } from '../../treasure';
 import { Enemy, EnemyTypeConfig } from '../../enemies';
+import { Rock, BOULDER_CONFIG, SMALL_ROCK_CONFIG } from '../../rocks';
 import { CombatXpTracker, GameEventManager, CollectionPulse } from '../../../core/components';
 import { TickSystem } from '../../../core/systems';
 import { CurrencyDisplay } from '../ui/CurrencyDisplay';
@@ -25,9 +26,12 @@ export class LevelScene extends Phaser.Scene {
   private swarmManager!: SwarmManager;
 
   private enemies: Enemy[] = [];
+  private rocks: Rock[] = [];
 
   // Physics group for enemy collision bodies (inner circles that prevent stacking)
   private enemyCollisionGroup!: Phaser.Physics.Arcade.Group;
+  // Static physics group for rocks that block movement (boulders)
+  private rockCollisionGroup!: Phaser.Physics.Arcade.StaticGroup;
   private xpTracker = new CombatXpTracker({ baseXpPerKill: 10 });
   private tickSystem = new TickSystem();
   private eventManager?: GameEventManager;
@@ -100,8 +104,14 @@ export class LevelScene extends Phaser.Scene {
     // Create physics group for enemy collision bodies
     this.enemyCollisionGroup = this.physics.add.group();
 
+    // Create static physics group for blocking rocks (boulders) - truly immovable
+    this.rockCollisionGroup = this.physics.add.staticGroup();
+
     // Spawn treasures around the world
     this.spawnTreasures(this.worldWidth, this.worldHeight);
+
+    // Spawn rocks
+    this.spawnRocks();
 
     // Spawn robot and nanobots BEFORE enemies so colliders can be set up
     this.spawnRobotAndSwarm();
@@ -206,10 +216,14 @@ export class LevelScene extends Phaser.Scene {
       enemy.update(delta);
     });
 
-    // Check dash collisions with enemies
+    // Check dash collisions with enemies and rocks
     if (this.robot.getIsDashing()) {
       this.checkDashCollisions(activeEnemies);
+      this.checkDashCollisionsWithRocks();
     }
+
+    // Update rocks
+    this.rocks.forEach(rock => rock.update());
 
     // Check for collections - robot collects items
     if (!this.robot.isDefeated()) {
@@ -248,6 +262,26 @@ export class LevelScene extends Phaser.Scene {
       const touchDistance = robotRadius + enemy.getRadius();
       if (dist <= touchDistance) {
         this.robot.checkDashCollision(enemy);
+      }
+    }
+  }
+
+  /** Check if dashing robot collides with any rocks */
+  private checkDashCollisionsWithRocks(): void {
+    const robotRadius = this.robot.getRadius();
+
+    for (const rock of this.rocks) {
+      if (rock.isDefeated()) continue;
+
+      const dist = Phaser.Math.Distance.Between(
+        this.robot.x, this.robot.y,
+        rock.x, rock.y
+      );
+
+      // Check if robot is touching rock
+      const touchDistance = robotRadius + rock.getRadius();
+      if (dist <= touchDistance) {
+        this.robot.checkDashCollision(rock);
       }
     }
   }
@@ -364,6 +398,7 @@ export class LevelScene extends Phaser.Scene {
         this.floorDisplay.setFloor(nextFloor);
         this.spawnEnemiesFromLevelData();
         this.spawnTreasures(this.worldWidth, this.worldHeight);
+        this.spawnRocks();
 
         // Create arrival portal at center (already scaled up, as if we came through it)
         arrivalPortal = new Portal(this, this.worldWidth / 2, this.worldHeight / 2, {
@@ -396,6 +431,12 @@ export class LevelScene extends Phaser.Scene {
       gem.destroy();
     }
     this.gemCollection.clear();
+
+    // Clear rocks
+    for (const rock of this.rocks) {
+      rock.destroy();
+    }
+    this.rocks = [];
   }
 
   private setupCollectionSystems(): void {
@@ -666,6 +707,68 @@ export class LevelScene extends Phaser.Scene {
     }
   }
 
+  /** Spawn rocks scattered around the level */
+  private spawnRocks(): void {
+    const centerX = this.worldWidth / 2;
+    const centerY = this.worldHeight / 2;
+    const safeRadius = 200; // Keep rocks away from spawn point
+
+    // Spawn boulders (spread out)
+    const numBoulders = 4;
+    for (let i = 0; i < numBoulders; i++) {
+      const pos = this.getSpawnPositionAwayFrom(
+        centerX, centerY, safeRadius,
+        this.worldWidth, this.worldHeight
+      );
+      this.spawnRock(pos.x, pos.y, BOULDER_CONFIG);
+    }
+
+    // Spawn small rocks in clusters (more fun to dash through)
+    const numClusters = 3;
+    const rocksPerCluster = 4;
+    const clusterSpread = 40;
+
+    for (let c = 0; c < numClusters; c++) {
+      const clusterCenter = this.getSpawnPositionAwayFrom(
+        centerX, centerY, safeRadius * 0.5,
+        this.worldWidth, this.worldHeight
+      );
+
+      for (let r = 0; r < rocksPerCluster; r++) {
+        const offsetX = Phaser.Math.Between(-clusterSpread, clusterSpread);
+        const offsetY = Phaser.Math.Between(-clusterSpread, clusterSpread);
+        this.spawnRock(clusterCenter.x + offsetX, clusterCenter.y + offsetY, SMALL_ROCK_CONFIG);
+      }
+    }
+  }
+
+  /** Spawn a single rock and set up its callbacks */
+  private spawnRock(x: number, y: number, config: typeof BOULDER_CONFIG): Rock {
+    const rock = new Rock(this, x, y, config);
+    this.rocks.push(rock);
+
+    // Add blocking rocks to collision group
+    if (rock.blocksMovement()) {
+      this.rockCollisionGroup.add(rock);
+    }
+
+    // Handle rock destruction
+    rock.onDeath((deadRock) => {
+      const index = this.rocks.indexOf(deadRock);
+      if (index > -1) {
+        this.rocks.splice(index, 1);
+      }
+
+      // Drop essence
+      const dropAmount = deadRock.getEssenceDropAmount();
+      this.essenceDropper.drop(deadRock.x, deadRock.y, dropAmount, (treasure) => {
+        this.treasureCollection.add(treasure);
+      });
+    });
+
+    return rock;
+  }
+
   /** Find a position that maintains minimum distance from existing positions */
   private findSpacedPosition(
     existingPositions: { x: number; y: number }[],
@@ -781,6 +884,15 @@ export class LevelScene extends Phaser.Scene {
     // Hook into swarm manager to add colliders for newly spawned nanobots
     this.swarmManager.onNanobotSpawn((nanobot) => {
       this.physics.add.collider(this.enemyCollisionGroup, nanobot);
+    });
+
+    // Boulders block both robot and nanobots
+    this.physics.add.collider(this.rockCollisionGroup, this.robot);
+    for (const nanobot of this.swarmManager.getNanobots()) {
+      this.physics.add.collider(this.rockCollisionGroup, nanobot);
+    }
+    this.swarmManager.onNanobotSpawn((nanobot) => {
+      this.physics.add.collider(this.rockCollisionGroup, nanobot);
     });
   }
 
