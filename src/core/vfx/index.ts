@@ -1,3 +1,4 @@
+export { BezierArc, type BezierArcConfig } from './BezierArc';
 export { ParticleBurst, type ParticleBurstConfig } from './ParticleBurst';
 export { FloatingText, type FloatingTextConfig } from './FloatingText';
 export { ArcProjectile, type ArcProjectileConfig } from './ArcProjectile';

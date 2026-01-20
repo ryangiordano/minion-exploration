@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { BezierArc } from './BezierArc';
 
 export interface ArcProjectileConfig {
   /** Projectile radius */
@@ -69,15 +70,16 @@ export class ArcProjectile {
     orb.setScrollFactor(0);
     orb.setDepth(1000);
 
-    // Calculate arc control point
-    const midX = (screenStartX + endX) / 2;
+    // Calculate arc - cap height based on vertical distance
     const arcHeight = Math.min(opts.arcHeight, Math.abs(endY - screenStartY) + 80);
-    const controlY = Math.min(screenStartY, endY) - arcHeight;
+    const arc = new BezierArc(screenStartX, screenStartY, endX, endY, {
+      fixedHeight: arcHeight,
+    });
 
     // Trail tracking
     let lastTrailTime = 0;
 
-    // Animate along quadratic bezier curve
+    // Animate along the arc
     this.scene.tweens.addCounter({
       from: 0,
       to: 1,
@@ -85,19 +87,9 @@ export class ArcProjectile {
       ease: opts.ease,
       onUpdate: (tween) => {
         const t = tween.getValue() ?? 0;
+        const pos = arc.getPointAt(t);
 
-        // Quadratic bezier: B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
-        const oneMinusT = 1 - t;
-        const newX =
-          oneMinusT * oneMinusT * screenStartX +
-          2 * oneMinusT * t * midX +
-          t * t * endX;
-        const newY =
-          oneMinusT * oneMinusT * screenStartY +
-          2 * oneMinusT * t * controlY +
-          t * t * endY;
-
-        orb.setPosition(newX, newY);
+        orb.setPosition(pos.x, pos.y);
 
         // Pulse scale during flight
         const pulse = 1 + Math.sin(t * Math.PI * 3) * 0.2;
@@ -107,7 +99,7 @@ export class ArcProjectile {
         const currentTime = t * opts.duration;
         if (currentTime - lastTrailTime >= opts.trailInterval) {
           lastTrailTime = currentTime;
-          this.spawnTrail(newX, newY, opts.color, opts.trailSize);
+          this.spawnTrail(pos.x, pos.y, opts.color, opts.trailSize);
         }
       },
       onComplete: () => {

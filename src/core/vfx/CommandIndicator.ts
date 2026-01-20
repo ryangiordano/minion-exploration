@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { BezierArc } from './BezierArc';
 
 export interface CommandIndicatorConfig {
   /** Line color */
@@ -7,13 +8,11 @@ export interface CommandIndicatorConfig {
   lineAlpha?: number;
   /** Line width */
   lineWidth?: number;
-  /** Dash length */
-  dashLength?: number;
-  /** Gap length between dashes */
-  gapLength?: number;
+  /** Arc height as ratio of distance */
+  arcHeightRatio?: number;
   /** Destination circle radius */
   destinationRadius?: number;
-  /** How long the indicator stays visible (ms) */
+  /** How long the arc takes to draw (ms) */
   duration?: number;
   /** Fade out duration (ms) */
   fadeOutDuration?: number;
@@ -23,10 +22,9 @@ const DEFAULT_CONFIG: Required<CommandIndicatorConfig> = {
   lineColor: 0xffff00,
   lineAlpha: 0.8,
   lineWidth: 2,
-  dashLength: 8,
-  gapLength: 6,
+  arcHeightRatio: 0.15,
   destinationRadius: 16,
-  duration: 400,
+  duration: 300,
   fadeOutDuration: 200,
 };
 
@@ -45,24 +43,9 @@ export class CommandIndicator {
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
-  /** Show command lines from units to destination, then fade out */
+  /** Show command arcs from units to destination, then fade out */
   show(units: UnitPosition[], destX: number, destY: number): void {
     if (units.length === 0) return;
-
-    // Create graphics for this flash
-    const graphics = this.scene.add.graphics();
-    graphics.setDepth(100);
-
-    // Draw dashed lines from each unit to destination
-    graphics.lineStyle(
-      this.config.lineWidth,
-      this.config.lineColor,
-      this.config.lineAlpha
-    );
-
-    for (const unit of units) {
-      this.drawDashedLine(graphics, unit.x, unit.y, destX, destY);
-    }
 
     // Create destination circle with pulse effect
     const circle = this.scene.add.circle(
@@ -88,57 +71,88 @@ export class CommandIndicator {
       ease: 'Sine.easeOut',
     });
 
-    // Fade out everything
+    // Animate an arc from each unit to destination
+    for (const unit of units) {
+      const graphics = this.scene.add.graphics();
+      graphics.setDepth(100);
+
+      this.animateArc(graphics, unit, destX, destY);
+    }
+
+    // Fade out circle after arcs complete
     this.scene.tweens.add({
-      targets: [graphics, circle],
+      targets: circle,
       alpha: 0,
       duration: this.config.fadeOutDuration,
-      delay: this.config.duration - this.config.fadeOutDuration,
+      delay: this.config.duration,
       onComplete: () => {
-        graphics.destroy();
         circle.destroy();
       },
     });
   }
 
-  /** Draw a dashed line between two points */
-  private drawDashedLine(
+  /** Animate an arc drawing itself from start to end, tracking source position */
+  private animateArc(
     graphics: Phaser.GameObjects.Graphics,
-    x1: number,
-    y1: number,
-    x2: number,
-    y2: number
+    source: UnitPosition,
+    destX: number,
+    destY: number
   ): void {
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const distance = Math.sqrt(dx * dx + dy * dy);
+    this.scene.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: this.config.duration,
+      ease: 'Power1',
+      onUpdate: (tween) => {
+        const t = tween.getValue() ?? 0;
+        // Recalculate arc each frame to track moving source
+        const arc = new BezierArc(source.x, source.y, destX, destY, {
+          heightRatio: this.config.arcHeightRatio,
+        });
+        this.drawArc(graphics, arc, t);
+      },
+      onComplete: () => {
+        // Fade out the arc
+        this.scene.tweens.add({
+          targets: graphics,
+          alpha: 0,
+          duration: this.config.fadeOutDuration,
+          onComplete: () => graphics.destroy(),
+        });
+      },
+    });
+  }
 
-    if (distance === 0) return;
+  /** Draw the arc up to the current progress */
+  private drawArc(
+    graphics: Phaser.GameObjects.Graphics,
+    arc: BezierArc,
+    progress: number
+  ): void {
+    graphics.clear();
 
-    const dashPlusGap = this.config.dashLength + this.config.gapLength;
-    const numDashes = Math.floor(distance / dashPlusGap);
+    if (progress <= 0) return;
 
-    const unitX = dx / distance;
-    const unitY = dy / distance;
+    const points = arc.getPoints(20, 0, progress);
 
-    for (let i = 0; i < numDashes; i++) {
-      const startDist = i * dashPlusGap;
-      const endDist = startDist + this.config.dashLength;
+    if (points.length < 2) return;
 
-      const startX = x1 + unitX * startDist;
-      const startY = y1 + unitY * startDist;
-      const endX = x1 + unitX * Math.min(endDist, distance);
-      const endY = y1 + unitY * Math.min(endDist, distance);
-
-      graphics.lineBetween(startX, startY, endX, endY);
+    // Draw main line
+    graphics.lineStyle(this.config.lineWidth, this.config.lineColor, this.config.lineAlpha);
+    graphics.beginPath();
+    graphics.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      graphics.lineTo(points[i].x, points[i].y);
     }
+    graphics.strokePath();
 
-    // Draw any remaining partial dash
-    const remainingStart = numDashes * dashPlusGap;
-    if (remainingStart < distance) {
-      const startX = x1 + unitX * remainingStart;
-      const startY = y1 + unitY * remainingStart;
-      graphics.lineBetween(startX, startY, x2, y2);
+    // Add subtle glow
+    graphics.lineStyle(this.config.lineWidth + 3, this.config.lineColor, this.config.lineAlpha * 0.2);
+    graphics.beginPath();
+    graphics.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      graphics.lineTo(points[i].x, points[i].y);
     }
+    graphics.strokePath();
   }
 }

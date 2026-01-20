@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { BezierArc } from './BezierArc';
 
 export interface HealArcConfig {
   /** Line color (default: healing green) */
@@ -98,16 +99,11 @@ export class HealArc {
 
         // Get current target position each frame
         const targetPos = getTargetPos();
-        const toX = targetPos.x;
-        const toY = targetPos.y;
+        const arc = new BezierArc(fromX, fromY, targetPos.x, targetPos.y, {
+          heightRatio: opts.arcHeightRatio,
+        });
 
-        // Recalculate arc control point based on current target position
-        const midX = (fromX + toX) / 2;
-        const distance = Phaser.Math.Distance.Between(fromX, fromY, toX, toY);
-        const arcHeight = distance * opts.arcHeightRatio;
-        const controlY = Math.min(fromY, toY) - arcHeight;
-
-        this.drawArc(graphics, fromX, fromY, toX, toY, midX, controlY, t, opts);
+        this.drawArc(graphics, arc, t, opts);
       },
       onComplete: () => {
         // Fade out after arc completes
@@ -129,12 +125,7 @@ export class HealArc {
   /** Draw the arc at the current progress */
   private drawArc(
     graphics: Phaser.GameObjects.Graphics,
-    fromX: number,
-    fromY: number,
-    toX: number,
-    toY: number,
-    midX: number,
-    controlY: number,
+    arc: BezierArc,
     progress: number,
     opts: Required<HealArcConfig>
   ): void {
@@ -145,15 +136,7 @@ export class HealArc {
 
     if (endT <= startT) return;
 
-    // Draw the arc as a series of line segments
-    const segments = 20;
-    const points: Phaser.Math.Vector2[] = [];
-
-    for (let i = 0; i <= segments; i++) {
-      const segmentT = startT + (endT - startT) * (i / segments);
-      const point = this.getPointOnBezier(fromX, fromY, midX, controlY, toX, toY, segmentT);
-      points.push(point);
-    }
+    const points = arc.getPoints(20, startT, endT);
 
     if (points.length < 2) return;
 
@@ -214,20 +197,4 @@ export class HealArc {
     }
   }
 
-  /** Calculate point on quadratic bezier curve */
-  private getPointOnBezier(
-    p0x: number,
-    p0y: number,
-    p1x: number,
-    p1y: number,
-    p2x: number,
-    p2y: number,
-    t: number
-  ): Phaser.Math.Vector2 {
-    // B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
-    const oneMinusT = 1 - t;
-    const x = oneMinusT * oneMinusT * p0x + 2 * oneMinusT * t * p1x + t * t * p2x;
-    const y = oneMinusT * oneMinusT * p0y + 2 * oneMinusT * t * p1y + t * t * p2y;
-    return new Phaser.Math.Vector2(x, y);
-  }
 }
