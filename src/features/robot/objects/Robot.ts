@@ -477,6 +477,7 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
       target,
       damage,
       scene: this.scene,
+      attackerType: 'robot',
       damageDeferred: false,
     };
 
@@ -625,6 +626,26 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
   /** Animate the robot's face to center (for portal transitions) */
   public centerFace(duration = 400): void {
     this.visual.centerFace(duration);
+  }
+
+  /** Set the visual scale (for portal animations) */
+  public setVisualScale(scale: number): void {
+    this.visual.setScale(scale);
+  }
+
+  /** Get the current visual scale */
+  public getVisualScale(): number {
+    return this.visual.scaleX;
+  }
+
+  /** Set the visual alpha (for portal animations) */
+  public setVisualAlpha(alpha: number): void {
+    this.visual.setAlpha(alpha);
+  }
+
+  /** Get the visual for direct tween access (portal animations) */
+  public getVisual(): Phaser.GameObjects.Container {
+    return this.visual;
   }
 
   destroy(fromScene?: boolean): void {

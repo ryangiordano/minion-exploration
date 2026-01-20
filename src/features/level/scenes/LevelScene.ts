@@ -304,7 +304,25 @@ export class LevelScene extends Phaser.Scene {
         duration: 400,
         ease: 'Sine.inOut',
         onComplete: () => {
-          this.portal?.enter();
+          // Get nanobots that will enter the portal
+          const nanobots = this.swarmManager.getNanobots().filter(n => !n.isDefeated());
+
+          // Create PortalAnimatable wrappers
+          const robotAnimatable = {
+            target: this.robot.getVisual(),
+            positionOwner: this.robot,
+            originalScale: 1,
+          };
+          const nanobotAnimatables = nanobots.map(n => ({
+            target: n,
+            positionOwner: n,
+            originalScale: 0.3,
+          }));
+
+          this.portal?.enterWithParty(robotAnimatable, nanobotAnimatables, () => {
+            // Portal animation complete - trigger transition
+            this.enterPortal();
+          });
         },
       });
 
@@ -361,15 +379,11 @@ export class LevelScene extends Phaser.Scene {
     const centerX = this.worldWidth / 2;
     const centerY = this.worldHeight / 2;
 
-    this.portal = new Portal(this, centerX, centerY, {
-      onEnter: () => this.enterPortal(),
-    });
+    this.portal = new Portal(this, centerX, centerY);
   }
 
   private enterPortal(): void {
-    this.isTransitioning = true;
-
-    // Save portal position for confetti (portal stays visible during fade)
+    // Save portal position for confetti
     const portalX = this.portal?.x ?? this.worldWidth / 2;
     const portalY = this.portal?.y ?? this.worldHeight / 2;
 
@@ -393,27 +407,41 @@ export class LevelScene extends Phaser.Scene {
 
         // Do all repositioning while screen is black
         this.clearFloorLoot();
-        this.robot.setPosition(this.worldWidth / 2, this.worldHeight / 2);
-        this.swarmManager.commandRecall();
         this.floorDisplay.setFloor(nextFloor);
         this.spawnEnemiesFromLevelData();
         this.spawnTreasures(this.worldWidth, this.worldHeight);
         this.spawnRocks();
 
-        // Create arrival portal at center (already scaled up, as if we came through it)
+        // Create arrival portal at center (starts at scale 0, will open with party)
         arrivalPortal = new Portal(this, this.worldWidth / 2, this.worldHeight / 2, {
           skipSpawnAnimation: true,
         });
-        arrivalPortal.setScale(3); // Start at the "grown" size
+        arrivalPortal.setScale(0);
       },
     });
 
     transition.play(() => {
-      // After fade in, play the exit animation (portal shrinks away)
-      // Re-enable movement and unfreeze nanobots once the portal fully disappears
-      arrivalPortal?.playExitAnimation(() => {
-        this.robot.enableMovement();
-        this.swarmManager.unfreezeAll();
+      // After fade in, portal opens and party emerges
+      const nanobots = this.swarmManager.getNanobots().filter(n => !n.isDefeated());
+
+      // Create PortalAnimatable wrappers
+      const robotAnimatable = {
+        target: this.robot.getVisual(),
+        positionOwner: this.robot,
+        originalScale: 1,
+      };
+      const nanobotAnimatables = nanobots.map(n => ({
+        target: n,
+        positionOwner: n,
+        originalScale: 0.3,
+      }));
+
+      arrivalPortal?.openWithParty(robotAnimatable, nanobotAnimatables, () => {
+        // Party has emerged - portal shrinks away
+        arrivalPortal?.playExitAnimation(() => {
+          this.robot.enableMovement();
+          this.swarmManager.unfreezeAll();
+        });
       });
       this.isTransitioning = false;
     });
@@ -962,6 +990,9 @@ export class LevelScene extends Phaser.Scene {
       onRemoveRobotGem: (slotType: GemSlotType, slotIndex: number) => {
         this.handleRemoveRobotGem(slotType, slotIndex);
       },
+      onSellGem: (gemInstanceId: string) => {
+        this.handleSellGem(gemInstanceId);
+      },
     });
   }
 
@@ -999,6 +1030,26 @@ export class LevelScene extends Phaser.Scene {
 
     // Add back to inventory
     this.inventory.addGem(gem.id);
+
+    // Sync state back to store
+    this.syncStateToStore();
+  }
+
+  /** Handle selling a gem from inventory for essence */
+  private handleSellGem(gemInstanceId: string): void {
+    // Find the gem in inventory
+    const inventoryGem = this.inventory.getGems().find(g => g.instanceId === gemInstanceId);
+    if (!inventoryGem) return;
+
+    // Get the gem's sell value (25% of essence cost)
+    const entry = GemRegistry.get(inventoryGem.gemId);
+    const sellValue = Math.floor((entry?.essenceCost ?? 0) * 0.25);
+
+    // Remove from inventory
+    this.inventory.removeGem(gemInstanceId);
+
+    // Add essence
+    this.currencyDisplay.add(sellValue);
 
     // Sync state back to store
     this.syncStateToStore();
@@ -1056,6 +1107,7 @@ export class LevelScene extends Phaser.Scene {
   private buildEquippedGemState(gemId: string, slot: number): EquippedGemState {
     const entry = GemRegistry.get(gemId);
     const visual = getGemVisual(gemId);
+    const essenceCost = entry?.essenceCost ?? 0;
 
     return {
       id: gemId,
@@ -1063,6 +1115,7 @@ export class LevelScene extends Phaser.Scene {
       name: entry?.name ?? gemId,
       description: entry?.description ?? '',
       color: visual.color,
+      removalCost: Math.floor(essenceCost * 0.25),
     };
   }
 
@@ -1080,13 +1133,15 @@ export class LevelScene extends Phaser.Scene {
     return this.inventory.getGems().map(gem => {
       const entry = GemRegistry.get(gem.gemId);
       const visual = getGemVisual(gem.gemId);
+      const essenceCost = entry?.essenceCost ?? 0;
 
       return {
         instanceId: gem.instanceId,
         gemId: gem.gemId,
         name: entry?.name ?? gem.gemId,
         description: entry?.description ?? '',
-        essenceCost: entry?.essenceCost ?? 0,
+        essenceCost,
+        sellValue: Math.floor(essenceCost * 0.25),
         color: visual.color,
       };
     });
