@@ -1,6 +1,6 @@
 import { EffectContext, EffectTarget, HealEffectParams, canBeHealed } from './types';
 import { GameEvents, HealEvent } from '../../components/GameEventManager';
-import { HealPulseWave } from '../../vfx';
+import { HealPulseWave, HealArc } from '../../vfx';
 
 /**
  * Heal effect - restores HP to targets with visual feedback.
@@ -28,8 +28,9 @@ export function healEffect(
     // Apply heal
     target.heal(power);
 
-    // Visual: healing line from executor to target
-    showHealLine(scene, executor.x, executor.y, target.x, target.y);
+    // Visual: healing arc from executor to target (tracks moving target)
+    const healArc = new HealArc(scene);
+    healArc.playToTarget(executor.x, executor.y, target, { mode: 'snake' });
 
     // Visual: burst at target
     showHealBurst(scene, target.x, target.y);
@@ -60,28 +61,6 @@ export function lifestealEffect(
 
   // Lifesteal uses simpler visuals (no big pulse wave)
   healEffect(ctx, targets, { power: healAmount, showPulseWave: false });
-}
-
-/**
- * Show a healing line from source to target
- */
-function showHealLine(
-  scene: Phaser.Scene,
-  fromX: number,
-  fromY: number,
-  toX: number,
-  toY: number
-): void {
-  const line = scene.add.graphics();
-  line.lineStyle(2, 0x00ff88, 0.8);
-  line.lineBetween(fromX, fromY, toX, toY);
-
-  scene.tweens.add({
-    targets: line,
-    alpha: 0,
-    duration: 300,
-    onComplete: () => line.destroy(),
-  });
 }
 
 /**

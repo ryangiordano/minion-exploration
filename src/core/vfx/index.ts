@@ -7,4 +7,5 @@ export { CommandIndicator, type CommandIndicatorConfig } from './CommandIndicato
 export { MuzzleFlash, type MuzzleFlashConfig } from './MuzzleFlash';
 export { LaserBeam, type LaserBeamConfig } from './LaserBeam';
 export { HealPulseWave, type HealPulseWaveConfig } from './HealPulseWave';
+export { HealArc, type HealArcConfig } from './HealArc';
 export { Vfx } from './Vfx';
