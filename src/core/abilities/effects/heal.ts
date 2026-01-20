@@ -1,9 +1,10 @@
 import { EffectContext, EffectTarget, HealEffectParams, canBeHealed } from './types';
 import { GameEvents, HealEvent } from '../../components/GameEventManager';
+import { HealPulseWave } from '../../vfx';
 
 /**
  * Heal effect - restores HP to targets with visual feedback.
- * Shows a healing line from executor to target, burst effect, and floating text.
+ * Shows a healing pulse wave from executor, healing lines to targets, and floating text.
  */
 export function healEffect(
   ctx: EffectContext,
@@ -11,9 +12,15 @@ export function healEffect(
   params: HealEffectParams
 ): void {
   const { executor, scene } = ctx;
-  const { power } = params;
+  const { power, showPulseWave = true, pulseRadius = 80 } = params;
 
   if (power <= 0) return;
+
+  // Show pulse wave effect at executor location (only once per heal effect)
+  if (showPulseWave && targets.length > 0) {
+    const healPulse = new HealPulseWave(scene);
+    healPulse.play(executor.x, executor.y, { endRadius: pulseRadius });
+  }
 
   for (const target of targets) {
     if (!canBeHealed(target)) continue;
@@ -51,7 +58,8 @@ export function lifestealEffect(
   // Always heal at least 1 if any damage was dealt
   const healAmount = Math.max(1, Math.floor(triggerDamage * params.ratio));
 
-  healEffect(ctx, targets, { power: healAmount });
+  // Lifesteal uses simpler visuals (no big pulse wave)
+  healEffect(ctx, targets, { power: healAmount, showPulseWave: false });
 }
 
 /**

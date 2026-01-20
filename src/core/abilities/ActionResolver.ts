@@ -317,7 +317,7 @@ export class ActionResolver {
           healEffect(
             { executor: owner, scene },
             [target],
-            { power }
+            { power, pulseRadius: ability.range }
           );
         }
         break;

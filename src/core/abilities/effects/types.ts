@@ -30,6 +30,10 @@ export interface EffectParams {
 export interface HealEffectParams extends EffectParams {
   /** Amount to heal (required for heal effects) */
   power: number;
+  /** Whether to show the pulse wave effect at executor (default: true) */
+  showPulseWave?: boolean;
+  /** Radius for the pulse wave effect (default: 80) */
+  pulseRadius?: number;
 }
 
 /**

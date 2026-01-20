@@ -6,4 +6,5 @@ export { TargetingIndicator, type TargetingIndicatorConfig } from './TargetingIn
 export { CommandIndicator, type CommandIndicatorConfig } from './CommandIndicator';
 export { MuzzleFlash, type MuzzleFlashConfig } from './MuzzleFlash';
 export { LaserBeam, type LaserBeamConfig } from './LaserBeam';
+export { HealPulseWave, type HealPulseWaveConfig } from './HealPulseWave';
 export { Vfx } from './Vfx';
