@@ -74,13 +74,13 @@ export class LevelScene extends Phaser.Scene {
     // Load robot face spritesheet (3x2 grid, 1984x1984 frames)
     // Top row: blink animation (eyes open -> half -> closed)
     // Bottom row: mouth animation (closed -> open)
-    this.load.spritesheet('robot-face', '/assets/robot/robot-face.png', {
+    this.load.spritesheet('robot-face', 'assets/robot/robot-face.png', {
       frameWidth: 1984,
       frameHeight: 1984,
     });
 
     // Load nanobot sprite (single image)
-    this.load.image('nanobot', '/assets/nanobots/nanobot.png');
+    this.load.image('nanobot', 'assets/nanobots/nanobot.png');
   }
 
   create(): void {
