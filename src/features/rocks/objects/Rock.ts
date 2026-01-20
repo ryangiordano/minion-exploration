@@ -51,9 +51,8 @@ export class Rock extends Phaser.Physics.Arcade.Image implements Combatable {
     if (isStatic) {
       const body = this.body as Phaser.Physics.Arcade.StaticBody;
       body.setSize(width, height);
-      // Static body offset is from sprite position (which is at center due to origin 0.5)
-      // Texture draws from top-left, so offset to center the collision box on the sprite
-      body.setOffset(0, 0);
+      // Static body needs explicit offset to center on sprite (origin is 0.5, 0.5)
+      body.setOffset(-width / 2, -height / 2);
     } else {
       const body = this.body as Phaser.Physics.Arcade.Body;
       body.setSize(width, height);

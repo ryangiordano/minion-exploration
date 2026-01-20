@@ -113,6 +113,13 @@ export class SwarmManager {
     }
   }
 
+  /** Command all nanobots to attack a specific target */
+  public commandAttack(target: Combatable): void {
+    for (const nanobot of this.nanobots) {
+      nanobot.commandAttack(target);
+    }
+  }
+
   /** Get a random scatter offset for organic movement */
   private getScatterOffset(): { x: number; y: number } {
     const angle = Math.random() * Math.PI * 2;

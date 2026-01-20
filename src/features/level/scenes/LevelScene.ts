@@ -307,6 +307,10 @@ export class LevelScene extends Phaser.Scene {
           // Get nanobots that will enter the portal
           const nanobots = this.swarmManager.getNanobots().filter(n => !n.isDefeated());
 
+          // Hide gem displays and clear any tint before shrinking into portal
+          this.robot.setGemDisplaysVisible(false);
+          this.robot.clearVisualTint();
+
           // Create PortalAnimatable wrappers
           const robotAnimatable = {
             target: this.robot.getVisual(),
@@ -437,7 +441,10 @@ export class LevelScene extends Phaser.Scene {
       }));
 
       arrivalPortal?.openWithParty(robotAnimatable, nanobotAnimatables, () => {
-        // Party has emerged - portal shrinks away
+        // Party has emerged - show gem displays again
+        this.robot.setGemDisplaysVisible(true);
+
+        // Portal shrinks away
         arrivalPortal?.playExitAnimation(() => {
           this.robot.enableMovement();
           this.swarmManager.unfreezeAll();
@@ -660,6 +667,11 @@ export class LevelScene extends Phaser.Scene {
         sprite.setTint(0x88ccff);
         this.time.delayedCall(100, () => sprite.clearTint());
       }
+
+      // Signal nanobots to attack the target
+      if (!enemy.isDefeated()) {
+        this.swarmManager.commandAttack(enemy);
+      }
     });
 
     // Create swarm manager
@@ -797,6 +809,14 @@ export class LevelScene extends Phaser.Scene {
       this.essenceDropper.drop(deadRock.x, deadRock.y, dropAmount, (treasure) => {
         this.treasureCollection.add(treasure);
       });
+    });
+
+    // Click to command nanobots to attack
+    rock.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (pointer.leftButtonDown() && !rock.isDefeated()) {
+        this.swarmManager.commandAttack(rock);
+        this.vfx.click.show(rock.x, rock.y, 0xff4444); // Red for attack
+      }
     });
 
     return rock;

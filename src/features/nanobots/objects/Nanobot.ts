@@ -337,12 +337,19 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable,
     // and lifesteal heals the individual nanobot
     const nanobotGems = this.robot.getNanobotGems();
     for (const gem of nanobotGems) {
+      // For ranged attacks (damageDeferred), each gem gets its own damage callback
+      // so multiple projectile gems each deal their own damage on impact
+      const dealDamage = context.damageDeferred
+        ? this.createDamageCallback(context.target, context.damage)
+        : context.dealDamage;
+
       gem.onAttackHit?.({
         attacker: this, // Nanobot is the attacker for gem effects
         target: context.target,
         damage: context.damage,
         scene: this.scene,
-        dealDamage: context.dealDamage,
+        attackerType: 'nanobot',
+        dealDamage,
         damageDeferred: context.damageDeferred,
       });
     }
@@ -353,6 +360,16 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable,
       sprite.setTint(0xff0000);
       this.scene.time.delayedCall(100, () => sprite.clearTint());
     }
+  }
+
+  /** Create a one-time damage callback for a projectile hit */
+  private createDamageCallback(target: Combatable, damage: number): () => void {
+    let dealt = false;
+    return () => {
+      if (dealt || target.isDefeated()) return;
+      dealt = true;
+      target.takeDamage(damage);
+    };
   }
 
   /** Play a quick pounce animation toward the target */
@@ -405,6 +422,11 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable,
   public commandRecall(): void {
     this.behaviorState = 'following';
     this.attackBehavior.disengage();
+  }
+
+  /** Command to attack a specific target */
+  public commandAttack(target: Combatable): void {
+    this.startFighting(target);
   }
 
   /** Set the list of nearby enemies for auto-targeting */
