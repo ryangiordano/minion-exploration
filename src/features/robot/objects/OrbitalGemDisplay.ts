@@ -36,6 +36,7 @@ export class OrbitalGemDisplay {
   private gemsGetter: () => AbilityGem[];
   private orbitAngle = 0;
   private config: OrbitalGemDisplayConfig;
+  private lastGemIds: string[] = [];
 
   constructor(scene: Phaser.Scene, gemsGetter: () => AbilityGem[], config: OrbitalGemDisplayConfig) {
     this.scene = scene;
@@ -46,10 +47,15 @@ export class OrbitalGemDisplay {
   /** Update orbital positions and cooldown states */
   update(centerX: number, centerY: number, delta: number): void {
     const gems = this.gemsGetter();
+    const currentGemIds = gems.map(g => g.id);
 
-    // Rebuild if gem count changed
-    if (gems.length !== this.orbitals.length) {
+    // Rebuild if gems changed (count or IDs)
+    const gemsChanged = currentGemIds.length !== this.lastGemIds.length ||
+      currentGemIds.some((id, i) => id !== this.lastGemIds[i]);
+
+    if (gemsChanged) {
       this.rebuildOrbitals(gems);
+      this.lastGemIds = currentGemIds;
     }
 
     // Advance orbit angle
@@ -112,6 +118,11 @@ export class OrbitalGemDisplay {
     });
   }
 
+  /** Set visibility of all orbital gems */
+  setVisible(visible: boolean): void {
+    this.orbitals.forEach(orbital => orbital.setVisible(visible));
+  }
+
   destroy(): void {
     this.orbitals.forEach(orbital => orbital.destroy());
     this.orbitals = [];
@@ -168,6 +179,10 @@ class OrbitalGem {
       this.sphere.setAlpha(1);
       this.highlight.setAlpha(0.4);
     }
+  }
+
+  setVisible(visible: boolean): void {
+    this.container.setVisible(visible);
   }
 
   destroy(): void {

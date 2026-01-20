@@ -144,6 +144,41 @@ create(): void {
 - Logic has clear inputs/outputs that can be unit tested
 - Multiple scenes or features might need similar functionality
 
+### Shared Components and DRY Code
+
+**Actively look for opportunities to extract shared components.**
+
+When implementing features, constantly evaluate whether patterns are repeating:
+
+- If two UI panels have the same structure, extract a shared component
+- If two game objects have similar behavior, extract a shared behavior component
+- If the same logic appears in multiple places, refactor to a single source of truth
+
+**Refactor proactively, not reactively:**
+
+- Don't wait until code is duplicated 3+ times - extract on the second occurrence
+- When modifying similar code in multiple places, stop and refactor first
+- Keep components focused and reusable by default
+
+**Examples:**
+```typescript
+// ✅ Good - shared component for equipment UI
+function GemEquipmentSection({ gemSlots, inventoryGems, onEquip, onRemove }) {
+  // Handles slot selection, gem selection, equipping logic
+  // Used by both RobotPanel and NanobotPanel
+}
+
+// ❌ Bad - duplicating the same logic in two panels
+function RobotPanel() {
+  const [selectedSlot, setSelectedSlot] = useState(null);
+  // ... 50 lines of selection/equipping logic
+}
+function NanobotPanel() {
+  const [selectedSlot, setSelectedSlot] = useState(null);
+  // ... same 50 lines copy-pasted
+}
+```
+
 ### Code Documentation
 
 **Use JSDoc comments (`/** */`) for IntelliSense support:**

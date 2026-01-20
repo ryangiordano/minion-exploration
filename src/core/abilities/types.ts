@@ -43,6 +43,9 @@ export interface AbilityDefinition {
   effectKey?: string;
 }
 
+/** Type of entity attacking */
+export type AttackerType = 'robot' | 'nanobot';
+
 /**
  * Context passed to onAttackHit hook
  */
@@ -51,6 +54,8 @@ export interface AttackHitContext {
   target: Combatable;
   damage: number;
   scene: Phaser.Scene;
+  /** Type of attacker - allows gems to behave differently for robot vs nanobot */
+  attackerType: AttackerType;
   /**
    * For ranged attacks, call this to apply damage on projectile impact.
    * For melee attacks, damage is already applied and this is undefined.

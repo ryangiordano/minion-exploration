@@ -5,6 +5,7 @@ const ESSENCE_CONFIG = {
   barCount: 5,
   pillCount: 10,
   essencePerPill: 5,
+  maxEssence: 100, // Must match React EssenceDisplay default max
   get essencePerBar() {
     return this.pillCount * this.essencePerPill; // 50
   },
@@ -26,8 +27,9 @@ export class CurrencyDisplay {
     this.scene = scene;
   }
 
+  /** Add essence, capping at max. Excess essence is lost. */
   public add(value: number): void {
-    this.currency += value;
+    this.currency = Math.min(this.currency + value, ESSENCE_CONFIG.maxEssence);
   }
 
   public spend(amount: number): boolean {

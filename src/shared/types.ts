@@ -29,6 +29,8 @@ export interface EquippedGemState {
   name: string;
   description: string;
   color: number;
+  /** Essence cost to remove this gem (25% of gem's essence cost) */
+  removalCost: number;
 }
 
 /** Inventory gem state for UI display */
@@ -38,6 +40,8 @@ export interface InventoryGemState {
   name: string;
   description: string;
   essenceCost: number;
+  /** Essence gained when selling this gem (25% of essenceCost) */
+  sellValue: number;
   color: number;
 }
 

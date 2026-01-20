@@ -36,6 +36,7 @@ interface GameStore {
   _onRepairMinion: ((minionId: string) => void) | null;
   _onEquipRobotGem: ((slotType: GemSlotType, slotIndex: number, gemInstanceId: string) => void) | null;
   _onRemoveRobotGem: ((slotType: GemSlotType, slotIndex: number) => void) | null;
+  _onSellGem: ((gemInstanceId: string) => void) | null;
 
   // Register command handlers (called by Phaser on init)
   registerCommandHandlers: (handlers: {
@@ -44,6 +45,7 @@ interface GameStore {
     onRepairMinion: (minionId: string) => void;
     onEquipRobotGem?: (slotType: GemSlotType, slotIndex: number, gemInstanceId: string) => void;
     onRemoveRobotGem?: (slotType: GemSlotType, slotIndex: number) => void;
+    onSellGem?: (gemInstanceId: string) => void;
   }) => void;
 
   // Commands (React calls these, Phaser handles them)
@@ -52,6 +54,7 @@ interface GameStore {
   repairMinion: (minionId: string) => void;
   equipRobotGem: (slotType: GemSlotType, slotIndex: number, gemInstanceId: string) => void;
   removeRobotGem: (slotType: GemSlotType, slotIndex: number) => void;
+  sellGem: (gemInstanceId: string) => void;
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -70,6 +73,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   _onRepairMinion: null,
   _onEquipRobotGem: null,
   _onRemoveRobotGem: null,
+  _onSellGem: null,
 
   // UI actions
   openPartyMenu: () => set({
@@ -107,6 +111,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     _onRepairMinion: handlers.onRepairMinion,
     _onEquipRobotGem: handlers.onEquipRobotGem ?? null,
     _onRemoveRobotGem: handlers.onRemoveRobotGem ?? null,
+    _onSellGem: handlers.onSellGem ?? null,
   }),
 
   // Commands (React -> Phaser)
@@ -133,6 +138,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   removeRobotGem: (slotType, slotIndex) => {
     const handler = get()._onRemoveRobotGem;
     if (handler) handler(slotType, slotIndex);
+  },
+
+  sellGem: (gemInstanceId) => {
+    const handler = get()._onSellGem;
+    if (handler) handler(gemInstanceId);
   },
 }));
 

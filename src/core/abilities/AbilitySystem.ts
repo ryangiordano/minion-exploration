@@ -1,4 +1,4 @@
-import { AbilityGem, AbilityDefinition, GemOwner, StatModifier, AttackHitContext, TakeDamageContext } from './types';
+import { AbilityGem, AbilityDefinition, GemOwner, StatModifier, AttackHitContext, TakeDamageContext, AttackerType } from './types';
 import { ActionResolver, ActionResolverContext } from './ActionResolver';
 import { Combatable, AttackConfig } from '../types/interfaces';
 import Phaser from 'phaser';
@@ -100,19 +100,22 @@ export class AbilitySystem {
    * Dispatch onAttackHit to all equipped gems
    * @param dealDamage - For ranged attacks, call this to apply damage. Undefined for melee.
    * @param damageDeferred - Whether damage is deferred (ranged) or already applied (melee)
+   * @param attackerType - Type of attacker (robot, nanobot, etc.) for gem behavior differentiation
    */
   public onAttackHit(
     target: Combatable,
     damage: number,
     scene: Phaser.Scene,
     dealDamage?: () => void,
-    damageDeferred: boolean = false
+    damageDeferred: boolean = false,
+    attackerType: AttackerType = 'nanobot'
   ): void {
     const context: AttackHitContext = {
       attacker: this.owner,
       target,
       damage,
       scene,
+      attackerType,
       dealDamage,
       damageDeferred,
     };

@@ -32,12 +32,14 @@ export function minionToState(minion: Minion, index: number): MinionState {
     equippedGems: equippedGems.map((gem, slot) => {
       const entry = GemRegistry.get(gem.id);
       const visual = getGemVisual(gem.id);
+      const essenceCost = entry?.essenceCost ?? 0;
       return {
         id: gem.id,
         slot,
         name: entry?.name ?? 'Unknown Gem',
         description: entry?.description ?? '',
         color: visual.color,
+        removalCost: Math.floor(essenceCost * 0.25),
       } satisfies EquippedGemState;
     }),
     attack: {
@@ -58,12 +60,14 @@ export function inventoryToGemState(inventory: InventoryState): InventoryGemStat
   return inventory.getGems().map((gem: InventoryGem) => {
     const entry = GemRegistry.get(gem.gemId);
     const visual = getGemVisual(gem.gemId);
+    const essenceCost = entry?.essenceCost ?? 0;
     return {
       instanceId: gem.instanceId,
       gemId: gem.gemId,
       name: entry?.name ?? 'Unknown Gem',
       description: entry?.description ?? '',
-      essenceCost: entry?.essenceCost ?? 0,
+      essenceCost,
+      sellValue: Math.floor(essenceCost * 0.25),
       color: visual.color,
     } satisfies InventoryGemState;
   });
