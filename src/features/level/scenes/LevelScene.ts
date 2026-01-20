@@ -648,6 +648,11 @@ export class LevelScene extends Phaser.Scene {
     for (let i = 0; i < startingNanobots; i++) {
       this.swarmManager.spawnNanobot();
     }
+
+    // Set up callback for robot to get all allied nanobots (for heal pulse)
+    this.robot.setGetAlliesCallback(() => {
+      return this.swarmManager.getNanobots().filter(n => !n.isDefeated());
+    });
   }
 
   private createReferenceGrid(worldWidth: number, worldHeight: number): void {

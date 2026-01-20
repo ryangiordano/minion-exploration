@@ -144,11 +144,25 @@ export class AbilitySystem {
    * @returns true if an ability was executed this frame
    */
   public update(delta: number): boolean {
-    // Collect ability definitions from gems that use the new pattern
+    return this.updateSlotRange(delta, 0, this.slots.length);
+  }
+
+  /**
+   * Update abilities for a specific range of slots only.
+   * Useful when some slots are for one entity (e.g., robot) and others for another (e.g., nanobots).
+   * @param startSlot - First slot index (inclusive)
+   * @param endSlot - Last slot index (exclusive)
+   * @returns true if an ability was executed this frame
+   */
+  public updateSlotRange(delta: number, startSlot: number, endSlot: number): boolean {
+    // Collect ability definitions from gems in the specified slot range
     const abilities: AbilityDefinition[] = [];
     const legacyGems: AbilityGem[] = [];
 
-    for (const gem of this.getEquippedGems()) {
+    for (let i = startSlot; i < endSlot && i < this.slots.length; i++) {
+      const gem = this.slots[i];
+      if (!gem) continue;
+
       const ability = gem.getAbility?.();
       if (ability) {
         abilities.push(ability);

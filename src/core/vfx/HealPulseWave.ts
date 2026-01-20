@@ -16,12 +16,12 @@ export interface HealPulseWaveConfig {
 }
 
 const DEFAULT_CONFIG: Required<HealPulseWaveConfig> = {
-  startRadius: 8,
-  endRadius: 80,
-  duration: 400,
+  startRadius: 12,
+  endRadius: 250,
+  duration: 800,
   color: 0x00ff88,
-  sparkleCount: 12,
-  lineWidth: 3,
+  sparkleCount: 20,
+  lineWidth: 4,
 };
 
 /**

@@ -3,7 +3,7 @@ import { Combatable } from '../../../core/types/interfaces';
 import { StatBar, HP_BAR_DEFAULTS } from '../../../core/components/StatBar';
 import { LAYERS } from '../../../core/config';
 import { AbilitySystem } from '../../../core/abilities/AbilitySystem';
-import { AbilityGem, GemOwner } from '../../../core/abilities/types';
+import { AbilityGem, GemOwner, AttackHitContext } from '../../../core/abilities/types';
 import { RobotVisual } from './RobotVisual';
 
 /** Visual radius for collision/display purposes */
@@ -236,8 +236,8 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
     // Deal damage
     enemy.takeDamage(this.dashDamage);
 
-    // Trigger gem effects (lifesteal, etc.)
-    this.abilitySystem.onAttackHit(enemy, this.dashDamage, this.scene);
+    // Trigger personal gem effects only (lifesteal, etc.)
+    this.triggerPersonalGemAttackHit(enemy, this.dashDamage);
 
     // Knockback enemy in dash direction (bowling effect)
     this.applyKnockback(enemy);
@@ -353,7 +353,9 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
       this.handleMovement();
     }
 
-    this.abilitySystem.update(delta);
+    // Note: Robot doesn't call abilitySystem.update() because:
+    // - Personal gems are passive or triggered on dash hit
+    // - Nanobot gems are handled by nanobots themselves
   }
 
   /** Update face animation based on rolling state */
@@ -447,6 +449,21 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
     return this.nanobotSlotCount;
   }
 
+  /** Trigger onAttackHit for personal gems only */
+  private triggerPersonalGemAttackHit(target: Combatable, damage: number): void {
+    const context: AttackHitContext = {
+      attacker: this,
+      target,
+      damage,
+      scene: this.scene,
+      damageDeferred: false,
+    };
+
+    for (const gem of this.getPersonalGems()) {
+      gem.onAttackHit?.(context);
+    }
+  }
+
   // --- Combatable interface ---
 
   public getCurrentHp(): number {
@@ -454,17 +471,19 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
   }
 
   public getMaxHp(): number {
-    // Apply stat modifiers from equipped gems
-    const modifiers = this.abilitySystem.getStatModifiers();
+    // Apply stat modifiers from personal gems only (not nanobot gems)
     let flatBonus = 0;
     let percentBonus = 0;
 
-    for (const mod of modifiers) {
-      if (mod.stat === 'maxHp') {
-        if (mod.type === 'flat') {
-          flatBonus += mod.value;
-        } else if (mod.type === 'percent') {
-          percentBonus += mod.value;
+    for (const gem of this.getPersonalGems()) {
+      const modifiers = gem.getStatModifiers?.() ?? [];
+      for (const mod of modifiers) {
+        if (mod.stat === 'maxHp') {
+          if (mod.type === 'flat') {
+            flatBonus += mod.value;
+          } else if (mod.type === 'percent') {
+            percentBonus += mod.value;
+          }
         }
       }
     }
@@ -519,6 +538,20 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
 
   public getScene(): Phaser.Scene {
     return this.scene;
+  }
+
+  // Callback to get all allied nanobots (set by LevelScene)
+  private getAlliesCallback?: () => GemOwner[];
+
+  /** Set the callback for getting all allied nanobots */
+  public setGetAlliesCallback(callback: () => GemOwner[]): void {
+    this.getAlliesCallback = callback;
+  }
+
+  /** Get all nearby allies (nanobots) - used by heal pulse */
+  public getNearbyAllies(_radius: number): GemOwner[] {
+    // Ignore radius - heal all allies
+    return this.getAlliesCallback?.() ?? [];
   }
 
   private flashDamage(): void {
