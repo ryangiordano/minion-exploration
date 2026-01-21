@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { Treasure, EssenceDropper } from '../../treasure';
-import { Enemy, EnemyTypeConfig } from '../../enemies';
+import { Enemy, EnemyTypeConfig, Spitter, EnemyProjectile } from '../../enemies';
 import { Rock, BOULDER_CONFIG, SMALL_ROCK_CONFIG } from '../../rocks';
 import { CombatXpTracker, GameEventManager, CollectionPulse } from '../../../core/components';
 import { TickSystem } from '../../../core/systems';
@@ -28,6 +28,8 @@ export class LevelScene extends Phaser.Scene {
   private swarmManager!: SwarmManager;
 
   private enemies: Enemy[] = [];
+  private spitters: Spitter[] = [];
+  private projectiles: EnemyProjectile[] = [];
   private rocks: Rock[] = [];
 
   // Physics group for enemy collision bodies (inner circles that prevent stacking)
@@ -196,14 +198,15 @@ export class LevelScene extends Phaser.Scene {
     // Update tick system (global heartbeat for DOTs, buffs, etc.)
     this.tickSystem.update(delta);
 
-    // Get active enemies
+    // Get active enemies (includes both regular enemies and spitters)
     const activeEnemies = this.enemies.filter(e => !e.isDefeated());
+    const activeSpitters = this.spitters.filter(s => !s.isDefeated());
 
     // Get active rocks (they're also valid targets for nanobots)
     const activeRocks = this.rocks.filter(r => !r.isDefeated());
 
-    // Combine enemies and rocks for nanobot targeting
-    const nanobotTargets: Combatable[] = [...activeEnemies, ...activeRocks];
+    // Combine enemies, spitters, and rocks for nanobot targeting
+    const nanobotTargets: Combatable[] = [...activeEnemies, ...activeSpitters, ...activeRocks];
 
     // Update robot
     if (!this.robot.isDefeated()) {
@@ -214,19 +217,30 @@ export class LevelScene extends Phaser.Scene {
     this.swarmManager.update(delta, nanobotTargets);
 
     // Update all enemies - they target the robot and nanobots
+    const combatTargets: Combatable[] = [];
+    if (!this.robot.isDefeated()) {
+      combatTargets.push(this.robot);
+    }
+    combatTargets.push(...this.swarmManager.getNanobots().filter(n => !n.isDefeated()));
+
     this.enemies.forEach(enemy => {
-      const targets: Combatable[] = [];
-      if (!this.robot.isDefeated()) {
-        targets.push(this.robot);
-      }
-      targets.push(...this.swarmManager.getNanobots().filter(n => !n.isDefeated()));
-      enemy.setNearbyTargets(targets);
+      enemy.setNearbyTargets(combatTargets);
       enemy.update(delta);
     });
 
-    // Check dash collisions with enemies and rocks
+    // Update spitters - they also target robot and nanobots
+    this.spitters.forEach(spitter => {
+      spitter.setNearbyTargets(combatTargets);
+      spitter.update(delta);
+    });
+
+    // Update projectiles and check collisions with robot
+    this.updateProjectiles();
+
+    // Check dash collisions with enemies, spitters, and rocks
     if (this.robot.getIsDashing()) {
       this.checkDashCollisions(activeEnemies);
+      this.checkDashCollisionsWithSpitters(activeSpitters);
       this.checkDashCollisionsWithRocks();
     }
 
@@ -274,6 +288,25 @@ export class LevelScene extends Phaser.Scene {
     }
   }
 
+  /** Check if dashing robot collides with any spitters */
+  private checkDashCollisionsWithSpitters(spitters: Spitter[]): void {
+    const robotRadius = this.robot.getRadius();
+
+    for (const spitter of spitters) {
+      if (spitter.isDefeated()) continue;
+
+      const dist = Phaser.Math.Distance.Between(
+        this.robot.x, this.robot.y,
+        spitter.x, spitter.y
+      );
+
+      const touchDistance = robotRadius + spitter.getRadius();
+      if (dist <= touchDistance) {
+        this.robot.checkDashCollision(spitter);
+      }
+    }
+  }
+
   /** Check if dashing robot collides with any rocks */
   private checkDashCollisionsWithRocks(): void {
     const robotRadius = this.robot.getRadius();
@@ -295,6 +328,68 @@ export class LevelScene extends Phaser.Scene {
       // Touching if edge distance is within tolerance (5px buffer)
       if (edgeDist <= 5) {
         this.robot.checkDashCollision(rock);
+      }
+    }
+  }
+
+  /** Update projectiles and check for collisions with robot and nanobots */
+  private updateProjectiles(): void {
+    const robotRadius = this.robot.getRadius();
+    const projectileRadius = 8; // Default projectile radius
+
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const projectile = this.projectiles[i];
+
+      // Update projectile (checks for max distance despawn)
+      projectile.update();
+
+      // Check if projectile was destroyed
+      if (!projectile.active) {
+        this.projectiles.splice(i, 1);
+        continue;
+      }
+
+      let hitTarget = false;
+
+      // Check collision with robot (if not defeated and not dashing)
+      if (!this.robot.isDefeated() && !this.robot.getIsDashing()) {
+        const dist = Phaser.Math.Distance.Between(
+          projectile.x, projectile.y,
+          this.robot.x, this.robot.y
+        );
+
+        const hitDistance = robotRadius + projectileRadius;
+        if (dist <= hitDistance) {
+          const damage = projectile.getDamage();
+          this.robot.takeDamage(damage);
+          hitTarget = true;
+        }
+      }
+
+      // Check collision with nanobots
+      if (!hitTarget) {
+        for (const nanobot of this.swarmManager.getNanobots()) {
+          if (nanobot.isDefeated()) continue;
+
+          const dist = Phaser.Math.Distance.Between(
+            projectile.x, projectile.y,
+            nanobot.x, nanobot.y
+          );
+
+          const hitDistance = nanobot.getRadius() + projectileRadius;
+          if (dist <= hitDistance) {
+            const damage = projectile.getDamage();
+            nanobot.takeDamage(damage);
+            hitTarget = true;
+            break;
+          }
+        }
+      }
+
+      // Destroy projectile if it hit something
+      if (hitTarget) {
+        projectile.onHit();
+        this.projectiles.splice(i, 1);
       }
     }
   }
@@ -372,8 +467,11 @@ export class LevelScene extends Phaser.Scene {
       return;
     }
 
-    // Win condition: all enemies dead
-    if (activeEnemies.length === 0 && this.enemies.length === 0) {
+    // Win condition: all enemies and spitters dead
+    const allEnemiesDefeated = activeEnemies.length === 0 && this.enemies.length === 0;
+    const allSpittersDefeated = this.spitters.filter(s => !s.isDefeated()).length === 0;
+
+    if (allEnemiesDefeated && allSpittersDefeated) {
       this.onFloorCleared();
     }
   }
@@ -485,6 +583,18 @@ export class LevelScene extends Phaser.Scene {
       rock.destroy();
     }
     this.rocks = [];
+
+    // Clear spitters
+    for (const spitter of this.spitters) {
+      spitter.destroy();
+    }
+    this.spitters = [];
+
+    // Clear projectiles
+    for (const projectile of this.projectiles) {
+      projectile.destroy();
+    }
+    this.projectiles = [];
   }
 
   private setupCollectionSystems(): void {
@@ -882,7 +992,12 @@ export class LevelScene extends Phaser.Scene {
       for (const enemySpawn of pack.enemies) {
         const x = packCenter.x + enemySpawn.offsetX * packSpreadRadius;
         const y = packCenter.y + enemySpawn.offsetY * packSpreadRadius;
-        this.spawnEnemy(x, y, enemySpawn.level, enemySpawn.type);
+
+        if (enemySpawn.enemyType === 'spitter') {
+          this.spawnSpitter(x, y, enemySpawn.level, enemySpawn.type);
+        } else {
+          this.spawnEnemy(x, y, enemySpawn.level, enemySpawn.type);
+        }
       }
     }
   }
@@ -931,6 +1046,40 @@ export class LevelScene extends Phaser.Scene {
     });
 
     return enemy;
+  }
+
+  private spawnSpitter(x: number, y: number, level: number, type: EnemyTypeConfig): Spitter {
+    const spitter = new Spitter(this, x, y, type, { level });
+    this.spitters.push(spitter);
+
+    // Set up collision body
+    const collisionBody = spitter.getCollisionBody();
+    this.enemyCollisionGroup.add(collisionBody);
+
+    // Handle projectile spawning
+    spitter.onProjectileSpawn((projectile) => {
+      this.projectiles.push(projectile);
+    });
+
+    spitter.onDeath((deadSpitter) => {
+      const index = this.spitters.indexOf(deadSpitter);
+      if (index > -1) {
+        this.spitters.splice(index, 1);
+      }
+
+      // Drop essence loot
+      const dropAmount = deadSpitter.getEssenceDropAmount();
+      this.essenceDropper.drop(deadSpitter.x, deadSpitter.y, dropAmount, (treasure) => {
+        this.treasureCollection.add(treasure);
+      });
+
+      // Drop a random gem
+      this.gemDropper.dropRandom(deadSpitter.x, deadSpitter.y, (worldGem) => {
+        this.gemCollection.add(worldGem);
+      });
+    });
+
+    return spitter;
   }
 
   /** Add an enemy's collision body to the physics group */

@@ -1,8 +1,13 @@
-import { EnemyTypeConfig, CRITTER_CONFIG, LACKEY_CONFIG, BRUTE_CONFIG } from '../../features/enemies';
+import { EnemyTypeConfig, CRITTER_CONFIG, LACKEY_CONFIG, BRUTE_CONFIG, SPITTER_CONFIG } from '../../features/enemies';
+
+/** Enemy types that the level generator can spawn */
+export type SpawnableEnemyType = 'enemy' | 'spitter';
 
 /** Describes a single enemy to spawn */
 export interface EnemySpawn {
   type: EnemyTypeConfig;
+  /** Which class to instantiate ('enemy' for melee, 'spitter' for ranged) */
+  enemyType: SpawnableEnemyType;
   level: number;
   /** Position offset from pack center (0-1 normalized, will be scaled) */
   offsetX: number;
@@ -42,6 +47,12 @@ export interface LevelGeneratorConfig {
   critterEndFloor: number;
   /** Floor where lackeys start appearing */
   lackeyStartFloor: number;
+  /** Floor at which spitters start appearing */
+  spitterStartFloor: number;
+  /** Chance of a spitter per pack (0-1), scales with floor */
+  baseSpitterChance: number;
+  /** Additional spitter chance per floor */
+  spitterChancePerFloor: number;
 }
 
 const DEFAULT_CONFIG: LevelGeneratorConfig = {
@@ -55,6 +66,10 @@ const DEFAULT_CONFIG: LevelGeneratorConfig = {
   enemyLevelMultiplier: 1,
   critterEndFloor: 2,
   lackeyStartFloor: 2,
+  // DEBUG: Spitters spawn on floor 1 with 100% chance for testing
+  spitterStartFloor: 1,
+  baseSpitterChance: 1.0,
+  spitterChancePerFloor: 0,
 };
 
 /**
@@ -96,9 +111,27 @@ export class LevelGenerator {
     if (hasBrute) {
       enemies.push({
         type: BRUTE_CONFIG,
+        enemyType: 'enemy',
         level: enemyLevel,
         offsetX: 0,
         offsetY: 0,
+      });
+    }
+
+    // Determine if this pack has a spitter
+    const hasSpitter = floor >= this.config.spitterStartFloor &&
+      Math.random() < this.getSpitterChance(floor);
+
+    if (hasSpitter) {
+      // Spitter positioned offset from center
+      const spitterAngle = Math.random() * Math.PI * 2;
+      const spitterDist = 0.4 + Math.random() * 0.3;
+      enemies.push({
+        type: SPITTER_CONFIG,
+        enemyType: 'spitter',
+        level: enemyLevel,
+        offsetX: Math.cos(spitterAngle) * spitterDist,
+        offsetY: Math.sin(spitterAngle) * spitterDist,
       });
     }
 
@@ -113,6 +146,7 @@ export class LevelGenerator {
       const distance = hasBrute ? 0.6 + Math.random() * 0.4 : Math.random() * 0.5;
       enemies.push({
         type: fodderType,
+        enemyType: 'enemy',
         level: enemyLevel,
         offsetX: Math.cos(angle) * distance,
         offsetY: Math.sin(angle) * distance,
@@ -148,5 +182,10 @@ export class LevelGenerator {
   private getBruteChance(floor: number): number {
     const floorsSinceBrutes = floor - this.config.bruteStartFloor;
     return Math.min(0.9, this.config.baseBruteChance + floorsSinceBrutes * this.config.bruteChancePerFloor);
+  }
+
+  private getSpitterChance(floor: number): number {
+    const floorsSinceSpitters = floor - this.config.spitterStartFloor;
+    return Math.min(0.8, this.config.baseSpitterChance + floorsSinceSpitters * this.config.spitterChancePerFloor);
   }
 }

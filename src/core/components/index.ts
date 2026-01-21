@@ -19,3 +19,4 @@ export { DestinationIndicator, type DestinationIndicatorConfig } from './Destina
 export { DebuffManager, type DebuffType, type ActiveDebuff, type DebuffVisual, type DebuffVisualFactory } from './DebuffManager';
 export { StunVisual, createDebuffVisual } from './StunVisual';
 export { CollectionPulse, type CollectionPulseConfig, type PulseEmitter } from './CollectionPulse';
+export { WanderBehavior, type WanderBehaviorConfig } from './WanderBehavior';
