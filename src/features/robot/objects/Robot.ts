@@ -6,6 +6,7 @@ import { AbilitySystem } from '../../../core/abilities/AbilitySystem';
 import { AbilityGem, GemOwner, AttackHitContext } from '../../../core/abilities/types';
 import { RobotVisual } from './RobotVisual';
 import { OrbitalGemDisplay } from './OrbitalGemDisplay';
+import { DashGhostTrail } from '../../../core/vfx';
 
 /** Visual radius for collision/display purposes */
 export const ROBOT_VISUAL_RADIUS = 20;
@@ -59,6 +60,7 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
   private lastFacingDirection = new Phaser.Math.Vector2(1, 0);
   private damagedEnemiesDuringDash = new Set<Combatable>();
   private onDashHitCallback?: (enemy: Combatable) => void;
+  private dashGhostTrail: DashGhostTrail;
 
   // Abilities - split between personal and nanobot slots
   private abilitySystem: AbilitySystem;
@@ -158,6 +160,12 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
     // Setup dash input (spacebar)
     this.setupDashInput();
 
+    // Initialize dash ghost trail effect
+    this.dashGhostTrail = new DashGhostTrail(scene, {
+      color: 0x88ccff,
+      radius: this.radius,
+    });
+
     // Start idle blink animation
     this.visual.playFaceAnimation('robot-blink');
   }
@@ -214,8 +222,9 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
     );
     this.setAcceleration(0, 0);
 
-    // Visual feedback - tint during dash
+    // Visual feedback - tint during dash and ghost trail
     this.visual.setTint(0x88ccff);
+    this.dashGhostTrail.start(this);
 
     // End dash after duration
     this.scene.time.delayedCall(this.dashDuration, () => {
@@ -238,8 +247,9 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
       this.setDrag(this.drag);
     });
 
-    // Clear tint
+    // Clear tint and stop ghost trail
     this.visual.clearTint();
+    this.dashGhostTrail.stop();
   }
 
   /** Check if an enemy should take dash damage */
@@ -663,6 +673,7 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
     this.visual?.destroy();
     this.personalGemDisplay?.destroy();
     this.nanobotGemDisplay?.destroy();
+    this.dashGhostTrail?.destroy();
     super.destroy(fromScene);
   }
 }

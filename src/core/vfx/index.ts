@@ -10,3 +10,4 @@ export { LaserBeam, type LaserBeamConfig } from './LaserBeam';
 export { HealPulseWave, type HealPulseWaveConfig } from './HealPulseWave';
 export { HealArc, type HealArcConfig } from './HealArc';
 export { Vfx } from './Vfx';
+export { DashGhostTrail, type DashGhostTrailConfig } from './DashGhostTrail';
