@@ -41,7 +41,7 @@ GemRegistry.register({
   description: 'Attack from distance with projectiles',
   essenceCost: 30,
   gemType: 'passive',
-  createGem: () => new RangedAttackGem(),
+  createGem: () => new RangedAttackGem({ attackRange: 250 }),
 });
 
 GemRegistry.register({

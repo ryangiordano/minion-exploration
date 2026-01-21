@@ -664,7 +664,7 @@ export class LevelScene extends Phaser.Scene {
     });
 
     // DEBUG: Hardcode ranged gem into first nanobot slot (slot index 3)
-    this.robot.equipGem(new RangedAttackGem(), 3);
+    this.robot.equipGem(new RangedAttackGem({ attackRange: 250 }), 3);
 
     // Camera follows robot
     this.cameras.main.startFollow(this.robot, true, 0.1, 0.1);

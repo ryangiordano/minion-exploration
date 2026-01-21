@@ -341,6 +341,7 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable,
       attackerY: this.y,
       attackerRadius: this.radius,
       effectiveAttack,
+      attacker: this,
     });
   }
 
@@ -353,7 +354,12 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable,
   private findClosestEnemy(): Combatable | null {
     const context = this.behaviorActor.getSnapshot().context;
     let closest: Combatable | null = null;
-    let closestDist = this.aggroRadius;
+
+    // Use the larger of base aggro radius or attack range for detection
+    const effectiveAttack = this.getEffectiveAttack();
+    const attackRange = effectiveAttack.range ?? 0;
+    const detectionRadius = Math.max(this.aggroRadius, attackRange);
+    let closestDist = detectionRadius;
 
     for (const enemy of context.nearbyEnemies) {
       if (enemy.isDefeated()) continue;

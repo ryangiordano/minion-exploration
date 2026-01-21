@@ -10,6 +10,8 @@ export interface AttackUpdateContext {
   attackerY: number;
   attackerRadius: number;
   effectiveAttack?: AttackConfig;  // Optional override for dynamic attack configs
+  /** The attacker entity (for aggro notification on damage) */
+  attacker?: Combatable;
 }
 
 /**
@@ -35,6 +37,8 @@ export class AttackBehavior {
   private readonly defaultAttack: AttackConfig;
   private onAttackCallback?: (context: AttackCallbackContext) => void;
   private onTargetDefeatedCallback?: (target: Combatable) => void;
+  /** The entity performing attacks (for aggro notification) */
+  private attacker?: Combatable;
 
   constructor(config: AttackBehaviorConfig) {
     this.defaultAttack = config.defaultAttack;
@@ -103,6 +107,11 @@ export class AttackBehavior {
     // Use effective attack if provided, otherwise default
     const attack = context?.effectiveAttack ?? this.defaultAttack;
 
+    // Store attacker reference for damage attribution
+    if (context?.attacker) {
+      this.attacker = context.attacker;
+    }
+
     // Check range if context provided (uses edge-to-edge distance)
     if (context) {
       const attackRange = attack.range ?? 0;
@@ -138,6 +147,7 @@ export class AttackBehavior {
 
     // Store reference before damage - target may trigger callbacks that clear this.target
     const target = this.target;
+    const attacker = this.attacker;
     const isRanged = attack.effectType === 'ranged';
 
     if (isRanged) {
@@ -150,7 +160,7 @@ export class AttackBehavior {
         // Check if target is still valid
         if (target.isDefeated()) return;
 
-        target.takeDamage(attack.damage);
+        target.takeDamage(attack.damage, attacker);
 
         // Check if we just killed the target
         if (target.isDefeated()) {
@@ -169,7 +179,7 @@ export class AttackBehavior {
       });
     } else {
       // For melee attacks, apply damage immediately
-      target.takeDamage(attack.damage);
+      target.takeDamage(attack.damage, attacker);
 
       this.onAttackCallback?.({
         target,

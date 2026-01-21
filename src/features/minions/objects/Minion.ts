@@ -611,6 +611,7 @@ export class Minion extends Phaser.Physics.Arcade.Sprite implements Attacker, Co
       attackerY: this.y,
       attackerRadius: MINION_RADIUS,
       effectiveAttack,
+      attacker: this,
     };
     this.attackBehavior.update(delta, attackContext);
     this.movement.update();

@@ -222,8 +222,13 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
     return Phaser.Math.Between(min, max);
   }
 
-  public takeDamage(amount: number): void {
+  public takeDamage(amount: number, attacker?: Combatable): void {
     if (this.defeated) return;
+
+    // If we know who attacked us, add them to threat (triggers aggro)
+    if (attacker && !attacker.isDefeated()) {
+      this.addAttacker(attacker);
+    }
 
     // Calculate flash color based on HP BEFORE damage (shows current state)
     const hpPercentBefore = this.hp / this.getMaxHp();

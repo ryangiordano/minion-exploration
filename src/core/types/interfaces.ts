@@ -45,7 +45,8 @@ export interface AttackConfig {
 export interface Combatable extends Followable {
   getCurrentHp(): number;
   getMaxHp(): number;
-  takeDamage(amount: number): void;
+  /** Take damage, optionally from a specific attacker (for aggro) */
+  takeDamage(amount: number, attacker?: Combatable): void;
   isDefeated(): boolean;
 }
 
