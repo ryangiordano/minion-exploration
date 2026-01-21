@@ -15,7 +15,9 @@ import { CollectionSystem } from '../systems';
 import { Portal } from '../objects/Portal';
 import { Robot } from '../../robot';
 import { SwarmManager } from '../../nanobots';
+import { RangedAttackGem } from '../../../core/abilities/gems/RangedAttackGem';
 import { Combatable } from '../../../core/types/interfaces';
+import { getEdgeDistance } from '../../../core/utils/distance';
 import { gameStore, GemSlotType } from '../../../ui/store/gameStore';
 import { GemRegistry } from '../../upgrade';
 import type { RobotState, NanobotState, InventoryGemState, EquippedGemState } from '../../../shared/types';
@@ -197,13 +199,19 @@ export class LevelScene extends Phaser.Scene {
     // Get active enemies
     const activeEnemies = this.enemies.filter(e => !e.isDefeated());
 
+    // Get active rocks (they're also valid targets for nanobots)
+    const activeRocks = this.rocks.filter(r => !r.isDefeated());
+
+    // Combine enemies and rocks for nanobot targeting
+    const nanobotTargets: Combatable[] = [...activeEnemies, ...activeRocks];
+
     // Update robot
     if (!this.robot.isDefeated()) {
       this.robot.update(delta);
     }
 
     // Update swarm
-    this.swarmManager.update(delta, activeEnemies);
+    this.swarmManager.update(delta, nanobotTargets);
 
     // Update all enemies - they target the robot and nanobots
     this.enemies.forEach(enemy => {
@@ -273,14 +281,19 @@ export class LevelScene extends Phaser.Scene {
     for (const rock of this.rocks) {
       if (rock.isDefeated()) continue;
 
-      const dist = Phaser.Math.Distance.Between(
-        this.robot.x, this.robot.y,
-        rock.x, rock.y
+      // Use edge-to-edge distance with tolerance to account for
+      // rectangular collision bodies (physics stops robot at edge)
+      const edgeDist = getEdgeDistance(
+        this.robot.x,
+        this.robot.y,
+        robotRadius,
+        rock.x,
+        rock.y,
+        rock.getRadius()
       );
 
-      // Check if robot is touching rock
-      const touchDistance = robotRadius + rock.getRadius();
-      if (dist <= touchDistance) {
+      // Touching if edge distance is within tolerance (5px buffer)
+      if (edgeDist <= 5) {
         this.robot.checkDashCollision(rock);
       }
     }
@@ -650,6 +663,9 @@ export class LevelScene extends Phaser.Scene {
       nanobotSlots: 3,
     });
 
+    // DEBUG: Hardcode ranged gem into first nanobot slot (slot index 3)
+    this.robot.equipGem(new RangedAttackGem(), 3);
+
     // Camera follows robot
     this.cameras.main.startFollow(this.robot, true, 0.1, 0.1);
 
@@ -939,14 +955,12 @@ export class LevelScene extends Phaser.Scene {
       this.physics.add.collider(this.enemyCollisionGroup, nanobot);
     });
 
-    // Boulders block both robot and nanobots
+    // Boulders block robot movement
     this.physics.add.collider(this.rockCollisionGroup, this.robot);
-    for (const nanobot of this.swarmManager.getNanobots()) {
-      this.physics.add.collider(this.rockCollisionGroup, nanobot);
-    }
-    this.swarmManager.onNanobotSpawn((nanobot) => {
-      this.physics.add.collider(this.rockCollisionGroup, nanobot);
-    });
+
+    // Nanobots use overlap instead of collider with rocks
+    // This allows them to get close enough for melee attacks
+    // (colliders would stop them at the edge, preventing attack range from being reached)
   }
 
   public getEventManager(): GameEventManager | undefined {

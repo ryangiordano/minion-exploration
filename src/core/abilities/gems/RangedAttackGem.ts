@@ -34,7 +34,7 @@ export class RangedAttackGem implements AbilityGem {
     this.projectileSpeed = config.projectileSpeed ?? 400;
     this.projectileSize = config.projectileSize ?? 4;
     this.projectileColor = config.projectileColor ?? LASER_COLOR;
-    this.attackRange = config.attackRange ?? 150;
+    this.attackRange = config.attackRange ?? 100;
     this.visualType = config.visualType ?? 'bolt';
   }
 
@@ -42,8 +42,8 @@ export class RangedAttackGem implements AbilityGem {
     return [
       // Fragile - reduced max HP
       { stat: 'maxHp', type: 'flat', value: -1 },
-      // Slower movement - 30% reduction
-      { stat: 'moveSpeed', type: 'percent', value: -0.3 },
+      // Slower movement while in combat - 30% reduction
+      { stat: 'combatMoveSpeed', type: 'percent', value: -0.3 },
     ];
   }
 

@@ -38,7 +38,9 @@ export class TargetedMovement {
    * Stop all movement and clear the target
    */
   public stop(): void {
-    this.sprite.setVelocity(0, 0);
+    if (this.sprite.body) {
+      this.sprite.setVelocity(0, 0);
+    }
     this.targetX = undefined;
     this.targetY = undefined;
   }
@@ -78,7 +80,9 @@ export class TargetedMovement {
 
     // Check if arrived
     if (distance < this.arrivalDistance) {
-      this.sprite.setVelocity(0, 0);
+      if (this.sprite.body) {
+        this.sprite.setVelocity(0, 0);
+      }
       this.targetX = undefined;
       this.targetY = undefined;
       return true;
@@ -103,7 +107,9 @@ export class TargetedMovement {
     const currentSpeed = this.speed * speedScale;
     const velocityX = Math.cos(angle) * currentSpeed;
     const velocityY = Math.sin(angle) * currentSpeed;
-    this.sprite.setVelocity(velocityX, velocityY);
+    if (this.sprite.body) {
+      this.sprite.setVelocity(velocityX, velocityY);
+    }
 
     return false;
   }

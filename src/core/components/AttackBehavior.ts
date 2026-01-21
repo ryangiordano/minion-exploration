@@ -1,5 +1,5 @@
-import Phaser from 'phaser';
 import { Combatable, AttackConfig } from '../types/interfaces';
+import { isWithinAttackRange } from '../utils/distance';
 
 export interface AttackBehaviorConfig {
   defaultAttack: AttackConfig;
@@ -103,18 +103,21 @@ export class AttackBehavior {
     // Use effective attack if provided, otherwise default
     const attack = context?.effectiveAttack ?? this.defaultAttack;
 
-    // Check range if context provided
+    // Check range if context provided (uses edge-to-edge distance)
     if (context) {
-      const distance = Phaser.Math.Distance.Between(
-        context.attackerX, context.attackerY,
-        this.target.x, this.target.y
-      );
-      const touchDistance = context.attackerRadius + this.target.getRadius();
       const attackRange = attack.range ?? 0;
-      const maxAttackDistance = touchDistance + attackRange + 5; // +5 tolerance
+      const inRange = isWithinAttackRange(
+        context.attackerX,
+        context.attackerY,
+        context.attackerRadius,
+        this.target.x,
+        this.target.y,
+        this.target.getRadius(),
+        attackRange
+      );
 
       // Not in range yet - don't attack, just tick cooldown
-      if (distance > maxAttackDistance) {
+      if (!inRange) {
         this.cooldownTimer -= delta;
         return;
       }

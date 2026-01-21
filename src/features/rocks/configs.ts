@@ -3,7 +3,7 @@ import { RockTypeConfig } from './types';
 /** Large boulder - blocks movement, needs minions to break */
 export const BOULDER_CONFIG: RockTypeConfig = {
   name: 'Boulder',
-  baseHp: 1,
+  baseHp: 5,
   width: 60,
   height: 50,
   color: 0x666666,
