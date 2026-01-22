@@ -4,6 +4,7 @@ import { StatBar, HP_BAR_DEFAULTS } from '../../../core/components/StatBar';
 import { LAYERS } from '../../../core/config';
 import { AbilitySystem } from '../../../core/abilities/AbilitySystem';
 import { AbilityGem, GemOwner, AttackHitContext } from '../../../core/abilities/types';
+import { ShieldGem } from '../../../core/abilities/gems/ShieldGem';
 import { RobotVisual } from './RobotVisual';
 import { OrbitalGemDisplay } from './OrbitalGemDisplay';
 import { DashGhostTrail } from '../../../core/vfx';
@@ -85,6 +86,9 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
   // Orbital gem displays
   private personalGemDisplay: OrbitalGemDisplay;  // Flat orbit, always visible
   private nanobotGemDisplay: OrbitalGemDisplay;   // 3D orbit, front/behind
+
+  // Shield (from ShieldGem if equipped in personal slots)
+  private shieldGem: ShieldGem | null = null;
 
   constructor(scene: Phaser.Scene, x: number, y: number, config: RobotConfig = {}) {
     // Create invisible physics body (we'll use RobotVisual for rendering)
@@ -384,6 +388,9 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
     this.personalGemDisplay.update(this.x, this.y, delta);
     this.nanobotGemDisplay.update(this.x, this.y, delta);
 
+    // Update shield position if active
+    this.shieldGem?.updateShieldFor(this);
+
     // Note: Robot doesn't call abilitySystem.update() because:
     // - Personal gems are passive or triggered on dash hit
     // - Nanobot gems are handled by nanobots themselves
@@ -462,7 +469,15 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
 
   /** Equip a gem to a specific slot */
   public equipGem(gem: AbilityGem, slot: number): boolean {
-    return this.abilitySystem.equipGem(gem, slot);
+    const result = this.abilitySystem.equipGem(gem, slot);
+
+    // If equipping a ShieldGem to a personal slot, create shield for robot
+    if (result && slot < this.personalSlotCount && gem instanceof ShieldGem) {
+      this.shieldGem = gem;
+      gem.createShieldFor(this);
+    }
+
+    return result;
   }
 
   /** Get the ability system for external access */
@@ -527,6 +542,13 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
 
   public takeDamage(amount: number): void {
     if (this.defeated || this.isInvulnerable) return;
+
+    // Check if any personal gem shield absorbs the damage
+    for (const gem of this.getPersonalGems()) {
+      if (gem instanceof ShieldGem && gem.tryAbsorbDamage(this, amount)) {
+        return; // Damage fully absorbed by shield
+      }
+    }
 
     this.currentHp = Math.max(0, this.currentHp - amount);
 
@@ -600,6 +622,7 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
   private die(): void {
     this.defeated = true;
     this.hpBar.destroy();
+    this.shieldGem?.removeShieldFor(this);
 
     // Death animation on visual
     this.scene.tweens.add({

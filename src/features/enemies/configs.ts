@@ -66,24 +66,24 @@ export const BRUTE_CONFIG: EnemyTypeConfig = {
   essenceDrop: [3, 5],
 };
 
-/** Spitter: Ranged enemy that fires slow, dodgeable projectiles */
+/** Spitter: Ranged enemy that fires slow, dodgeable projectiles - fragile glass cannon */
 export const SPITTER_CONFIG: EnemyTypeConfig = {
-  radius: 16,
+  radius: 12,
   color: 0xffaa44,
   strokeColor: 0xcc7722,
   speed: 45,
   // DEBUG: Fast fire rate for testing (was 2500)
   attackCooldown: 800,
   baseStats: {
-    maxHp: 8,
+    maxHp: 3,
     maxMp: 0,
     strength: 2,
     dexterity: 1,
     magic: 1,
-    resilience: 1,
+    resilience: 0,
   },
   statGrowth: {
-    maxHp: 2,
+    maxHp: 1,
     strength: 0.3,
   },
   essenceDrop: [2, 3],

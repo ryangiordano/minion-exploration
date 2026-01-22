@@ -113,7 +113,7 @@ export class Rock extends Phaser.Physics.Arcade.Image implements Combatable {
   }
 
   public takeDamage(amount: number): void {
-    if (this.defeated) return;
+    if (this.defeated || !this.scene) return;
 
     this.hp = Math.max(0, this.hp - amount);
     this.updateHpBar();

@@ -17,6 +17,7 @@ export const GEM_VISUALS: Record<string, GemVisualConfig> = {
   ranged_attack: { id: 'ranged_attack', color: 0xaaffaa, name: 'Ranged' }, // Light Green
   heal_pulse: { id: 'heal_pulse', color: 0xffff44, name: 'Heal Pulse' },  // Yellow
   lifesteal: { id: 'lifesteal', color: 0xff44ff, name: 'Lifesteal' },     // Magenta
+  shield: { id: 'shield', color: 0x4488ff, name: 'Shield' },              // Blue (matches shield visual)
 };
 
 /** Default color for unknown gem types */

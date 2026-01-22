@@ -15,11 +15,11 @@ import { CollectionSystem } from '../systems';
 import { Portal } from '../objects/Portal';
 import { Robot } from '../../robot';
 import { SwarmManager } from '../../nanobots';
-import { RangedAttackGem } from '../../../core/abilities/gems/RangedAttackGem';
 import { Combatable } from '../../../core/types/interfaces';
 import { getEdgeDistance } from '../../../core/utils/distance';
 import { gameStore, GemSlotType } from '../../../ui/store/gameStore';
 import { GemRegistry } from '../../upgrade';
+import { ShieldGem } from '../../../core/abilities/gems/ShieldGem';
 import type { RobotState, NanobotState, InventoryGemState, EquippedGemState } from '../../../shared/types';
 
 export class LevelScene extends Phaser.Scene {
@@ -229,10 +229,11 @@ export class LevelScene extends Phaser.Scene {
     });
 
     // Update spitters - they also target robot and nanobots
-    this.spitters.forEach(spitter => {
+    const activeSpittersForUpdate = this.spitters.filter(s => !s.isDefeated());
+    for (const spitter of activeSpittersForUpdate) {
       spitter.setNearbyTargets(combatTargets);
       spitter.update(delta);
-    });
+    }
 
     // Update projectiles and check collisions with robot
     this.updateProjectiles();
@@ -773,9 +774,6 @@ export class LevelScene extends Phaser.Scene {
       nanobotSlots: 3,
     });
 
-    // DEBUG: Hardcode ranged gem into first nanobot slot (slot index 3)
-    this.robot.equipGem(new RangedAttackGem({ attackRange: 250 }), 3);
-
     // Camera follows robot
     this.cameras.main.startFollow(this.robot, true, 0.1, 0.1);
 
@@ -808,6 +806,9 @@ export class LevelScene extends Phaser.Scene {
       spawnCost: this.NANOBOT_COST,
       baseOrbitDistance: 50,
     });
+
+    // DEBUG: Equip shield gem to nanobot slot for testing (slot 3 = first nanobot slot)
+    this.robot.equipGem(new ShieldGem(), 3);
 
     // Spawn starting nanobots
     const startingNanobots = 3;

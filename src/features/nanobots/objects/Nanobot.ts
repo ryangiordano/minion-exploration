@@ -8,6 +8,7 @@ import { LAYERS } from '../../../core/config';
 import { Robot } from '../../robot';
 import { GemOwner } from '../../../core/abilities/types';
 import { getEdgeDistance } from '../../../core/utils/distance';
+import { ShieldGem } from '../../../core/abilities/gems/ShieldGem';
 import {
   nanobotBehaviorMachine,
   isFighting,
@@ -77,6 +78,9 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable,
   private isPouncing = false;
   private rangeIndicator?: Phaser.GameObjects.Graphics;
 
+  // Shield (from ShieldGem if equipped)
+  private shieldGem: ShieldGem | null = null;
+
   constructor(scene: Phaser.Scene, x: number, y: number, config: NanobotConfig) {
     super(scene, x, y, 'nanobot');
 
@@ -110,6 +114,9 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable,
 
     // Apply stat modifiers from gems
     this.applyGemStatModifiers();
+
+    // Initialize shield if ShieldGem is equipped
+    this.initializeShield();
 
     // Setup movement with effective speed
     this.movement = new TargetedMovement(this, {
@@ -168,6 +175,18 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable,
     this.currentHp = this.effectiveMaxHp;
   }
 
+  /** Initialize shield if ShieldGem is equipped in robot's nanobot slots */
+  private initializeShield(): void {
+    const nanobotGems = this.robot.getNanobotGems();
+    for (const gem of nanobotGems) {
+      if (gem instanceof ShieldGem) {
+        this.shieldGem = gem;
+        gem.createShieldFor(this);
+        break; // Only one shield per nanobot
+      }
+    }
+  }
+
   /** Get effective move speed after applying gem modifiers */
   private getEffectiveMoveSpeed(inCombat: boolean = false): number {
     let speed = this.baseMoveSpeed;
@@ -206,6 +225,9 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable,
 
     // Update HP bar position
     this.hpBar.update(this.x, this.y, this.currentHp, this.effectiveMaxHp, delta);
+
+    // Update shield position if active
+    this.shieldGem?.updateShieldFor(this);
 
     // Update floating animation (visual only, doesn't affect physics position)
     this.floatTime += delta;
@@ -534,6 +556,11 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable,
   public takeDamage(amount: number): void {
     if (this.defeated) return;
 
+    // Check if shield absorbs the damage
+    if (this.shieldGem?.tryAbsorbDamage(this, amount)) {
+      return; // Damage fully absorbed by shield
+    }
+
     this.currentHp = Math.max(0, this.currentHp - amount);
     this.flashDamage();
 
@@ -568,6 +595,7 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable,
     this.behaviorActor.stop();
     this.hpBar.destroy();
     this.rangeIndicator?.destroy();
+    this.shieldGem?.removeShieldFor(this);
 
     // Death particle effect - red circle expanding and fading
     this.playDeathParticle();

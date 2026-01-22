@@ -6,6 +6,7 @@ import { PoisonGem } from '../../core/abilities/gems/PoisonGem';
 import { RangedAttackGem } from '../../core/abilities/gems/RangedAttackGem';
 import { HealPulseGem } from '../../core/abilities/gems/HealPulseGem';
 import { LifestealGem } from '../../core/abilities/gems/LifestealGem';
+import { ShieldGem } from '../../core/abilities/gems/ShieldGem';
 
 // Register all available gems with their costs
 GemRegistry.register({
@@ -60,6 +61,15 @@ GemRegistry.register({
   essenceCost: 40,
   gemType: 'passive',
   createGem: () => new LifestealGem(),
+});
+
+GemRegistry.register({
+  id: 'shield',
+  name: 'Shield Gem',
+  description: 'One-time shield that absorbs 1 hit',
+  essenceCost: 25,
+  gemType: 'passive',
+  createGem: () => new ShieldGem(),
 });
 
 // Export public API

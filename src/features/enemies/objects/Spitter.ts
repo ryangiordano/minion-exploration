@@ -291,7 +291,7 @@ export class Spitter extends Phaser.Physics.Arcade.Sprite implements Combatable,
   }
 
   public update(delta: number): void {
-    if (this.defeated) return;
+    if (this.defeated || !this.scene) return;
 
     // Sync collision body
     this.collisionBody.setPosition(this.x, this.y);
