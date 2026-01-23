@@ -202,9 +202,6 @@ export class RobotVisual extends Phaser.GameObjects.Container {
 
     // Apply offset to face container
     this.faceContainer.setPosition(this.faceOffsetX, this.faceOffsetY);
-
-    // Update mask position to follow the main container
-    this.faceMask.setPosition(this.x, this.y);
   }
 
   /** Wraps an offset value to stay within [-wrapDistance/2, wrapDistance/2] */
@@ -218,7 +215,29 @@ export class RobotVisual extends Phaser.GameObjects.Container {
   /** Sync position with physics body */
   public syncPosition(x: number, y: number): void {
     this.setPosition(x, y);
-    this.faceMask.setPosition(x, y);
+    this.syncMask();
+  }
+
+  /** Keep the mask in sync with container transform (call after scale/position changes) */
+  public syncMask(): void {
+    // Guard against being called before mask is created (during constructor)
+    if (!this.faceMask) return;
+    this.faceMask.setPosition(this.x, this.y);
+    this.faceMask.setScale(this.scaleX, this.scaleY);
+  }
+
+  /** Override setScale to also update the mask */
+  setScale(x: number, y?: number): this {
+    super.setScale(x, y);
+    this.syncMask();
+    return this;
+  }
+
+  /** Override setPosition to also update the mask */
+  setPosition(x?: number, y?: number, z?: number, w?: number): this {
+    super.setPosition(x, y, z, w);
+    this.syncMask();
+    return this;
   }
 
   /** Show the tint overlay for damage flash */
@@ -269,6 +288,33 @@ export class RobotVisual extends Phaser.GameObjects.Container {
         this.faceContainer.setPosition(this.faceOffsetX, this.faceOffsetY);
       },
     });
+  }
+
+  /**
+   * Manually scroll the face by a given amount (for arrival animations).
+   * Positive Y = face scrolls down (simulates falling/spinning).
+   */
+  public scrollFace(deltaX: number, deltaY: number): void {
+    this.faceOffsetX += deltaX;
+    this.faceOffsetY += deltaY;
+
+    // Wrap offsets to stay within bounds
+    this.faceOffsetX = this.wrapOffset(this.faceOffsetX);
+    this.faceOffsetY = this.wrapOffset(this.faceOffsetY);
+
+    // Apply to face container
+    this.faceContainer.setPosition(this.faceOffsetX, this.faceOffsetY);
+  }
+
+  /** Set face to the smiling/mouth-open frame (for happy expressions) */
+  public setSmiling(smiling: boolean): void {
+    if (this.faceSprites.length > 0) {
+      // Frame 4 is mouth open, frame 0 is normal
+      const frame = smiling ? 4 : 0;
+      for (const sprite of this.faceSprites) {
+        sprite.setFrame(frame);
+      }
+    }
   }
 
   destroy(fromScene?: boolean): void {

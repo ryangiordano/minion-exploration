@@ -14,6 +14,8 @@ export interface FloorTransitionConfig {
   onScreenBlack?: () => void;
   /** World position to shoot confetti from (e.g., portal location) */
   confettiOrigin?: { x: number; y: number };
+  /** Skip the confetti celebration (for launch transitions) */
+  skipConfetti?: boolean;
 }
 
 const DEFAULT_CONFIG: Required<FloorTransitionConfig> = {
@@ -23,6 +25,7 @@ const DEFAULT_CONFIG: Required<FloorTransitionConfig> = {
   transitionText: 'Delving deeper into the depths...',
   onScreenBlack: () => {},
   confettiOrigin: { x: 0, y: 0 },
+  skipConfetti: false,
 };
 
 /**
@@ -44,17 +47,21 @@ export class FloorTransition {
 
   /** Run the full transition sequence, then call onComplete */
   play(onComplete: () => void): void {
-    this.showConfetti(() => {
+    const afterConfetti = () => {
       this.fadeToBlack(() => {
         // Call onScreenBlack while screen is black (for repositioning, spawning, etc.)
         this.config.onScreenBlack();
         this.showText(() => {
-          this.fadeIn(() => {
-            onComplete();
-          });
+          this.fadeIn(onComplete);
         });
       });
-    });
+    };
+
+    if (this.config.skipConfetti) {
+      afterConfetti();
+    } else {
+      this.showConfetti(afterConfetti);
+    }
   }
 
   private showConfetti(onComplete: () => void): void {

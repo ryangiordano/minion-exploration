@@ -673,6 +673,11 @@ export class Nanobot extends Phaser.Physics.Arcade.Sprite implements Combatable,
     this.onDeathCallback = callback;
   }
 
+  /** Set shield visibility (for arrival/launch animations) */
+  public setShieldVisible(visible: boolean): void {
+    this.shieldGem?.setShieldVisible(this, visible);
+  }
+
   // --- GemOwner interface (nanobots don't have MP, but need these for gem execution) ---
 
   public getCurrentMp(): number {

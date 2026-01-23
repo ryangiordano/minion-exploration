@@ -23,6 +23,8 @@ export interface EnemyPack {
 export interface LevelData {
   floor: number;
   packs: EnemyPack[];
+  /** Normalized position (0-1) for the launch pad, away from spawn */
+  launchPadPosition: { x: number; y: number };
 }
 
 /** Configuration for difficulty scaling */
@@ -92,7 +94,23 @@ export class LevelGenerator {
       packs.push(this.generatePack(floor));
     }
 
-    return { floor, packs };
+    // Generate launch pad position away from center (spawn point)
+    const launchPadPosition = this.generateLaunchPadPosition();
+
+    return { floor, packs, launchPadPosition };
+  }
+
+  /** Generate a position for the launch pad, away from center spawn */
+  private generateLaunchPadPosition(): { x: number; y: number } {
+    // Random angle, biased toward corners
+    const angle = Math.random() * Math.PI * 2;
+    // Distance from center (0.5, 0.5) - place in outer 30% of the map
+    const distance = 0.35 + Math.random() * 0.1;
+
+    return {
+      x: 0.5 + Math.cos(angle) * distance,
+      y: 0.5 + Math.sin(angle) * distance,
+    };
   }
 
   private getPackCount(floor: number): number {

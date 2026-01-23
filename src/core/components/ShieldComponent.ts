@@ -117,6 +117,11 @@ export class ShieldComponent {
     this.graphics.destroy();
   }
 
+  /** Set shield visibility */
+  public setVisible(visible: boolean): void {
+    this.graphics.setVisible(visible);
+  }
+
   private startScaleInAnimation(duration: number): void {
     this.isScalingIn = true;
     this.scaleInProgress = 0;

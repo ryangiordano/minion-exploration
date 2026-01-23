@@ -224,6 +224,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
 
   public takeDamage(amount: number, attacker?: Combatable): void {
     if (this.defeated) return;
+    // Guard against scene being destroyed (e.g., during floor transition)
+    if (!this.scene) return;
 
     // If we know who attacked us, add them to threat (triggers aggro)
     if (attacker && !attacker.isDefeated()) {

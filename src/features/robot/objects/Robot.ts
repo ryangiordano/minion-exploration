@@ -80,6 +80,9 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
   // Movement control (disabled during portal transitions, etc.)
   private movementEnabled = true;
 
+  // Dash control (can be disabled independently from movement, e.g., on launch pad)
+  private dashEnabled = true;
+
   // Face animation state
   private isRolling = false;
 
@@ -184,7 +187,7 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
 
   /** Attempt to dash if not on cooldown and movement is enabled */
   private tryDash(): void {
-    if (!this.movementEnabled || this.isDashing || this.dashCooldownTimer > 0 || this.defeated) {
+    if (!this.movementEnabled || !this.dashEnabled || this.isDashing || this.dashCooldownTimer > 0 || this.defeated) {
       return;
     }
 
@@ -654,6 +657,16 @@ export class Robot extends Phaser.Physics.Arcade.Image implements Combatable, Ge
   /** Enable player movement input */
   public enableMovement(): void {
     this.movementEnabled = true;
+  }
+
+  /** Disable dashing (e.g., when on launch pad) */
+  public disableDash(): void {
+    this.dashEnabled = false;
+  }
+
+  /** Enable dashing */
+  public enableDash(): void {
+    this.dashEnabled = true;
   }
 
   /** Animate the robot's face to center (for portal transitions) */

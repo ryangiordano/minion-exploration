@@ -10,11 +10,11 @@ import { WorldGem, GemDropper, InventoryState, getGemVisual } from '../../invent
 import { GameState } from '../../../core/game-state';
 import { LevelGenerator, LevelData } from '../../../core/level-generation';
 import { FloorTransition, DefeatTransition } from '../../../core/floor-transition';
-import { Vfx } from '../../../core/vfx';
+import { Vfx, ArrivalSequence, LaunchSequence, NanobotDockSequence } from '../../../core/vfx';
 import { CollectionSystem } from '../systems';
-import { Portal } from '../objects/Portal';
+import { LaunchPad } from '../objects/LaunchPad';
 import { Robot } from '../../robot';
-import { SwarmManager } from '../../nanobots';
+import { SwarmManager, Nanobot } from '../../nanobots';
 import { Combatable } from '../../../core/types/interfaces';
 import { getEdgeDistance } from '../../../core/utils/distance';
 import { gameStore, GemSlotType } from '../../../ui/store/gameStore';
@@ -64,7 +64,14 @@ export class LevelScene extends Phaser.Scene {
   private gameState = new GameState();
   private levelGenerator = new LevelGenerator();
   private isTransitioning = false;
-  private portal?: Portal;
+  private launchPad?: LaunchPad;
+
+  // Arrival/Launch sequences
+  private arrivalSequence!: ArrivalSequence;
+  private launchSequence!: LaunchSequence;
+  private nanobotDockSequence!: NanobotDockSequence;
+  private isOnLaunchPad = false;
+  private spaceKey?: Phaser.Input.Keyboard.Key;
 
   // World dimensions (stored for respawning)
   private worldWidth = 1600;
@@ -104,6 +111,11 @@ export class LevelScene extends Phaser.Scene {
 
     // Visual effects manager
     this.vfx = new Vfx(this);
+
+    // Arrival/Launch sequences
+    this.arrivalSequence = new ArrivalSequence(this);
+    this.launchSequence = new LaunchSequence(this);
+    this.nanobotDockSequence = new NanobotDockSequence(this);
 
     // Create physics group for enemy collision bodies
     this.enemyCollisionGroup = this.physics.add.group();
@@ -260,8 +272,8 @@ export class LevelScene extends Phaser.Scene {
     // Update nanobot count display
     this.updateNanobotDisplay();
 
-    // Check portal collision (robot entering portal triggers floor transition)
-    this.checkPortalCollision();
+    // Update launch pad charging
+    this.updateLaunchPad(delta);
 
     // Check win/lose conditions (only if not already transitioning)
     if (!this.isTransitioning) {
@@ -395,70 +407,148 @@ export class LevelScene extends Phaser.Scene {
     }
   }
 
-  private checkPortalCollision(): void {
-    if (!this.portal || this.portal.isActivated() || this.robot.isDefeated()) return;
+  /** Update launch pad state and handle charging */
+  private updateLaunchPad(delta: number): void {
+    if (!this.launchPad || this.robot.isDefeated()) return;
 
-    if (this.portal.containsPoint(this.robot.x, this.robot.y)) {
-      // Disable player movement and tween to portal center
-      this.robot.disableMovement();
+    // Check if robot is on the launch pad
+    const wasOnPad = this.isOnLaunchPad;
+    this.isOnLaunchPad = this.launchPad.containsPoint(this.robot.x, this.robot.y);
 
-      const portalX = this.portal.x;
-      const portalY = this.portal.y;
+    // Disable dash when on an active launch pad (spacebar is used for charging)
+    if (this.isOnLaunchPad && this.launchPad.isActivated() && !this.launchPad.isLaunched()) {
+      this.robot.disableDash();
 
-      // Tween robot to portal center
+      // Check for spacebar hold
+      if (this.spaceKey?.isDown) {
+        this.launchPad.startCharge();
+
+        // Update nanobot docking based on charge progress
+        const nanobots = this.swarmManager.getNanobots().filter(n => !n.isDefeated());
+        this.nanobotDockSequence.updateDocking(
+          nanobots,
+          this.robot.x,
+          this.robot.y,
+          this.launchPad.getChargeProgress()
+        );
+      } else {
+        this.launchPad.stopCharge();
+      }
+    } else {
+      // Not on pad or pad not active - enable dashing
+      this.robot.enableDash();
+
+      if (wasOnPad && !this.isOnLaunchPad) {
+        // Left the pad - stop charging
+        this.launchPad.stopCharge();
+      }
+    }
+
+    // Update charge decay
+    this.launchPad.updateCharge(delta);
+  }
+
+  /** Trigger the full launch sequence */
+  private triggerLaunchSequence(): void {
+    this.isTransitioning = true;
+    this.robot.disableMovement();
+
+    // Hide gem displays
+    this.robot.setGemDisplaysVisible(false);
+    this.robot.clearVisualTint();
+
+    // Snap nanobots to final docked positions
+    const nanobots = this.swarmManager.getNanobots().filter(n => !n.isDefeated());
+    this.nanobotDockSequence.snapToDocked(nanobots, this.robot.x, this.robot.y);
+
+    // Hide nanobots (they're "attached" to robot during launch)
+    for (const nanobot of nanobots) {
       this.tweens.add({
-        targets: this.robot,
-        x: portalX,
-        y: portalY,
-        duration: 400,
-        ease: 'Sine.inOut',
-        onComplete: () => {
-          // Get nanobots that will enter the portal
-          const nanobots = this.swarmManager.getNanobots().filter(n => !n.isDefeated());
-
-          // Hide gem displays and clear any tint before shrinking into portal
-          this.robot.setGemDisplaysVisible(false);
-          this.robot.clearVisualTint();
-
-          // Create PortalAnimatable wrappers
-          const robotAnimatable = {
-            target: this.robot.getVisual(),
-            positionOwner: this.robot,
-            originalScale: 1,
-          };
-          const nanobotAnimatables = nanobots.map(n => ({
-            target: n,
-            positionOwner: n,
-            originalScale: 0.3,
-          }));
-
-          this.portal?.enterWithParty(robotAnimatable, nanobotAnimatables, () => {
-            // Portal animation complete - trigger transition
-            this.enterPortal();
-          });
-        },
-      });
-
-      // Freeze nanobots and tween them to form a clock pattern around the portal
-      this.swarmManager.freezeAll();
-      const nanobots = this.swarmManager.getNanobots().filter(n => !n.isDefeated());
-      const formationRadius = this.portal.getRadius() * 1.5;
-
-      nanobots.forEach((nanobot, index) => {
-        // Distribute evenly around the circle like clock positions
-        const angle = (index / nanobots.length) * Math.PI * 2 - Math.PI / 2; // Start at 12 o'clock
-        const targetX = portalX + Math.cos(angle) * formationRadius;
-        const targetY = portalY + Math.sin(angle) * formationRadius;
-
-        this.tweens.add({
-          targets: nanobot,
-          x: targetX,
-          y: targetY,
-          duration: 400,
-          ease: 'Sine.inOut',
-        });
+        targets: nanobot,
+        alpha: 0,
+        scaleX: 0,
+        scaleY: 0,
+        duration: 200,
       });
     }
+
+    // Play launch animation
+    this.time.delayedCall(200, () => {
+      this.launchSequence.play(this.robot.getVisual(), () => {
+        // Launch complete - fade to black and transition
+        this.performFloorTransition();
+      });
+    });
+  }
+
+  /** Perform the floor transition after launch */
+  private performFloorTransition(): void {
+    // Heal robot
+    this.robot.heal(this.robot.getMaxHp());
+
+    // Advance to next floor
+    const nextFloor = this.gameState.advanceFloor();
+
+    // Capture nanobots for clearing dock state
+    const launchingNanobots = this.swarmManager.getNanobots().filter(n => !n.isDefeated());
+
+    // Play transition (fade to black, show text, fade in)
+    const transition = new FloorTransition(this, {
+      transitionText: `Ascending to floor ${nextFloor}...`,
+      skipConfetti: true,
+      onScreenBlack: () => {
+        // Reset robot visual
+        this.robot.getVisual().setScale(1);
+        this.robot.getVisual().setAlpha(1);
+
+        // Destroy old launch pad
+        this.launchPad?.destroy();
+        this.launchPad = undefined;
+
+        // Clear docking state
+        this.nanobotDockSequence.clearDockingState(launchingNanobots);
+
+        // Position robot at center for new floor
+        const centerX = this.worldWidth / 2;
+        const centerY = this.worldHeight / 2;
+        this.robot.setPosition(centerX, centerY);
+        this.robot.getVisual().setPosition(centerX, centerY);
+
+        // Reset nanobots
+        const nanobots = this.swarmManager.getNanobots().filter(n => !n.isDefeated());
+        for (const nanobot of nanobots) {
+          nanobot.setPosition(centerX, centerY);
+          nanobot.setAlpha(0);
+          nanobot.setScale(0);
+          nanobot.setShieldVisible(false); // Hide shields during arrival
+        }
+
+        // Clear floor and spawn new content
+        this.clearFloorLoot();
+        this.floorDisplay.setFloor(nextFloor);
+        this.spawnEnemiesFromLevelData();
+        this.spawnTreasures(this.worldWidth, this.worldHeight);
+        this.spawnRocks();
+        this.spawnLaunchPad();
+      },
+    });
+
+    transition.play(() => {
+      // After fade in, play arrival animation
+      this.swarmManager.freezeAll();
+      this.robot.setGemDisplaysVisible(false);
+
+      this.arrivalSequence.play(this.robot.getVisual(), this.robot.x, this.robot.y, () => {
+        // Robot has landed - animate nanobots appearing
+        const currentNanobots = this.swarmManager.getNanobots().filter(n => !n.isDefeated());
+        this.animateNanobotsAppear(currentNanobots, () => {
+          this.robot.enableMovement();
+          this.robot.setGemDisplaysVisible(true);
+          this.swarmManager.unfreezeAll();
+          this.isTransitioning = false;
+        });
+      });
+    });
   }
 
   private checkWinLoseConditions(activeEnemies: Enemy[]): void {
@@ -488,82 +578,19 @@ export class LevelScene extends Phaser.Scene {
   }
 
   private onFloorCleared(): void {
-    // Prevent multiple portals from spawning
-    this.isTransitioning = true;
+    // Prevent multiple activations
+    if (this.launchPad?.isActivated()) return;
 
-    // Spawn portal at center - player can enter when ready
-    const centerX = this.worldWidth / 2;
-    const centerY = this.worldHeight / 2;
+    // Activate the launch pad - it turns green and player can now charge to launch
+    this.launchPad?.activate();
 
-    this.portal = new Portal(this, centerX, centerY);
-  }
-
-  private enterPortal(): void {
-    // Save portal position for confetti
-    const portalX = this.portal?.x ?? this.worldWidth / 2;
-    const portalY = this.portal?.y ?? this.worldHeight / 2;
-
-    // Heal robot
-    this.robot.heal(this.robot.getMaxHp());
-
-    // Advance to next floor
-    const nextFloor = this.gameState.advanceFloor();
-
-    // Variable to hold the arrival portal
-    let arrivalPortal: Portal | undefined;
-
-    // Play transition sequence with confetti from portal
-    const transition = new FloorTransition(this, {
-      transitionText: `Descending to floor ${nextFloor}...`,
-      confettiOrigin: { x: portalX, y: portalY },
-      onScreenBlack: () => {
-        // Destroy the entry portal (screen is black, player won't see)
-        this.portal?.destroy();
-        this.portal = undefined;
-
-        // Do all repositioning while screen is black
-        this.clearFloorLoot();
-        this.floorDisplay.setFloor(nextFloor);
-        this.spawnEnemiesFromLevelData();
-        this.spawnTreasures(this.worldWidth, this.worldHeight);
-        this.spawnRocks();
-
-        // Create arrival portal at center (starts at scale 0, will open with party)
-        arrivalPortal = new Portal(this, this.worldWidth / 2, this.worldHeight / 2, {
-          skipSpawnAnimation: true,
-        });
-        arrivalPortal.setScale(0);
-      },
-    });
-
-    transition.play(() => {
-      // After fade in, portal opens and party emerges
-      const nanobots = this.swarmManager.getNanobots().filter(n => !n.isDefeated());
-
-      // Create PortalAnimatable wrappers
-      const robotAnimatable = {
-        target: this.robot.getVisual(),
-        positionOwner: this.robot,
-        originalScale: 1,
-      };
-      const nanobotAnimatables = nanobots.map(n => ({
-        target: n,
-        positionOwner: n,
-        originalScale: 0.3,
-      }));
-
-      arrivalPortal?.openWithParty(robotAnimatable, nanobotAnimatables, () => {
-        // Party has emerged - show gem displays again
-        this.robot.setGemDisplaysVisible(true);
-
-        // Portal shrinks away
-        arrivalPortal?.playExitAnimation(() => {
-          this.robot.enableMovement();
-          this.swarmManager.unfreezeAll();
-        });
-      });
-      this.isTransitioning = false;
-    });
+    // Show feedback
+    this.vfx.text.show(
+      this.launchPad?.x ?? this.worldWidth / 2,
+      (this.launchPad?.y ?? this.worldHeight / 2) - 60,
+      'Launch Pad Ready!',
+      { color: '#44cc44', bold: true }
+    );
   }
 
   private clearFloorLoot(): void {
@@ -774,8 +801,14 @@ export class LevelScene extends Phaser.Scene {
       nanobotSlots: 3,
     });
 
+    // Disable movement during arrival
+    this.robot.disableMovement();
+
     // Camera follows robot
     this.cameras.main.startFollow(this.robot, true, 0.1, 0.1);
+
+    // Store space key reference for launch pad charging
+    this.spaceKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
     // Handle robot death
     this.robot.onDeath(() => {
@@ -820,6 +853,121 @@ export class LevelScene extends Phaser.Scene {
     this.robot.setGetAlliesCallback(() => {
       return this.swarmManager.getNanobots().filter(n => !n.isDefeated());
     });
+
+    // Play arrival animation
+    this.playArrivalSequence();
+
+    // Spawn the launch pad for this level
+    this.spawnLaunchPad();
+  }
+
+  /** Play the robot arrival animation (falling from sky) */
+  private playArrivalSequence(): void {
+    // Freeze nanobots during arrival
+    this.swarmManager.freezeAll();
+
+    // Completely hide nanobots initially (invisible and no size)
+    const nanobots = this.swarmManager.getNanobots();
+    for (const nanobot of nanobots) {
+      nanobot.setAlpha(0);
+      nanobot.setScale(0);
+      nanobot.setShieldVisible(false); // Hide shields during arrival
+      // Position at robot center (they'll animate outward after landing)
+      nanobot.setPosition(this.robot.x, this.robot.y);
+    }
+
+    // Hide gem displays during arrival
+    this.robot.setGemDisplaysVisible(false);
+
+    // Play arrival animation on robot visual
+    this.arrivalSequence.play(this.robot.getVisual(), this.robot.x, this.robot.y, () => {
+      // Robot has landed - sync visual position to physics body position
+      this.robot.getVisual().setPosition(this.robot.x, this.robot.y);
+
+      // Now animate nanobots appearing from robot position
+      this.animateNanobotsAppear(nanobots, () => {
+        // All animations complete - enable movement
+        this.robot.enableMovement();
+        this.robot.setGemDisplaysVisible(true);
+        this.swarmManager.unfreezeAll();
+      });
+    });
+  }
+
+  /** Animate nanobots appearing after robot lands */
+  private animateNanobotsAppear(nanobots: Nanobot[], onComplete: () => void): void {
+    if (nanobots.length === 0) {
+      onComplete();
+      return;
+    }
+
+    let completed = 0;
+    const staggerDelay = 80;
+
+    for (let i = 0; i < nanobots.length; i++) {
+      const nanobot = nanobots[i];
+      const angle = (i / nanobots.length) * Math.PI * 2;
+      const targetX = this.robot.x + Math.cos(angle) * 50;
+      const targetY = this.robot.y + Math.sin(angle) * 50;
+
+      this.time.delayedCall(i * staggerDelay, () => {
+        nanobot.setScale(0);
+        nanobot.setAlpha(1);
+
+        // Pop in animation
+        this.tweens.add({
+          targets: nanobot,
+          x: targetX,
+          y: targetY,
+          scaleX: 0.3,
+          scaleY: 0.3,
+          duration: 250,
+          ease: 'Back.easeOut',
+          onComplete: () => {
+            // Show shield after nanobot appears
+            nanobot.setShieldVisible(true);
+            completed++;
+            if (completed === nanobots.length) {
+              onComplete();
+            }
+          },
+        });
+      });
+    }
+  }
+
+  /** Spawn the launch pad at a random location */
+  private spawnLaunchPad(): void {
+    const levelData = this.levelGenerator.generate(this.gameState.getFloor());
+    const padX = levelData.launchPadPosition.x * this.worldWidth;
+    const padY = levelData.launchPadPosition.y * this.worldHeight;
+
+    this.launchPad = new LaunchPad(this, padX, padY);
+
+    // Set up launch callbacks
+    this.launchPad
+      .onChargeStart(() => {
+        // Start nanobot docking animation
+        const nanobots = this.swarmManager.getNanobots().filter(n => !n.isDefeated());
+        this.swarmManager.freezeAll();
+        this.nanobotDockSequence.startDocking(nanobots, this.robot.x, this.robot.y, 0);
+      })
+      .onChargeRelease(() => {
+        // Cancel docking - nanobots return to normal
+        const nanobots = this.swarmManager.getNanobots().filter(n => !n.isDefeated());
+        this.nanobotDockSequence.releaseDocking(nanobots);
+        this.nanobotDockSequence.clearDockingState(nanobots);
+
+        // Unfreeze after release animation
+        this.time.delayedCall(300, () => {
+          if (!this.launchPad?.isLaunched()) {
+            this.swarmManager.unfreezeAll();
+          }
+        });
+      })
+      .onLaunch(() => {
+        this.triggerLaunchSequence();
+      });
   }
 
   private createReferenceGrid(worldWidth: number, worldHeight: number): void {

@@ -111,6 +111,23 @@ export class ShieldGem implements AbilityGem {
     }
   }
 
+  /**
+   * Set visibility for a specific owner's shield.
+   */
+  public setShieldVisible(owner: GemOwner, visible: boolean): void {
+    const shield = this.shields.get(owner);
+    shield?.setVisible(visible);
+  }
+
+  /**
+   * Set visibility for all shields.
+   */
+  public setAllShieldsVisible(visible: boolean): void {
+    for (const shield of this.allShields) {
+      shield.setVisible(visible);
+    }
+  }
+
   // Standard gem interface - called when equipped to robot
   onEquip(_owner: GemOwner): void {
     // Shields are created explicitly by entities (robot/nanobots) since:
