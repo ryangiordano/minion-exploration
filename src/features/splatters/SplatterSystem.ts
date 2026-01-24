@@ -22,7 +22,7 @@ export interface SplatterConfig {
 }
 
 const DEFAULT_CONFIG: Required<SplatterConfig> = {
-  opacity: 0.35,
+  opacity: 0.7,
   splatter: true,
   splatterCount: 0, // 0 means random 3-6
   splatterSpread: 1.5,
