@@ -98,42 +98,27 @@ export class SplatterSystem {
     }
   }
 
-  /** Animated burst splatter - grows outward over time */
+  /** Animated burst splatter - main splat with staggered outer splashes */
   addBurst(
     x: number,
     y: number,
     radius: number = 40,
     color: number = SPLATTER_COLORS.brown
   ): void {
-    const startRadius = radius * 0.3;
-    const endRadius = radius * 0.7;
-    const duration = 150;
-    const steps = 8;
-
-    // Animate main splatter growing
-    for (let i = 0; i <= steps; i++) {
-      const delay = (i / steps) * duration;
-      const progress = i / steps;
-      // Ease out for smooth deceleration
-      const easedProgress = 1 - Math.pow(1 - progress, 2);
-      const currentRadius = startRadius + (endRadius - startRadius) * easedProgress;
-
-      this.scene.time.delayedCall(delay, () => {
-        this.addSplatter(x, y, currentRadius, color, { splatter: false });
-      });
-    }
+    // Main splatter (single draw, no stacking)
+    this.addSplatter(x, y, radius * 0.5, color, { splatter: false });
 
     // Animated outward splashes (staggered)
-    const numSplats = 6 + Math.floor(Math.random() * 4);
+    const numSplats = 5 + Math.floor(Math.random() * 3);
     for (let i = 0; i < numSplats; i++) {
       const angle = (i / numSplats) * Math.PI * 2 + Math.random() * 0.5;
-      const delay = 50 + i * 15;
+      const delay = 20 + i * 20;
 
       this.scene.time.delayedCall(delay, () => {
-        const dist = radius * (0.4 + Math.random() * 0.5);
+        const dist = radius * (0.3 + Math.random() * 0.4);
         const px = x + Math.cos(angle) * dist;
         const py = y + Math.sin(angle) * dist;
-        const splatRadius = radius * (0.15 + Math.random() * 0.2);
+        const splatRadius = radius * (0.12 + Math.random() * 0.15);
         this.addSplatter(px, py, splatRadius, color, { splatter: false });
       });
     }
