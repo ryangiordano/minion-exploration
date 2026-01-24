@@ -277,6 +277,11 @@ export class LevelScene extends Phaser.Scene {
     // Update collection pulse
     this.collectionPulse.update(delta);
 
+    // Update robot goo trail (picks up color when crossing puddles)
+    if (!this.robot.isDefeated()) {
+      this.splatterSystem.updateTrail('robot', this.robot.x, this.robot.y, 15);
+    }
+
     // Update nanobot count display
     this.updateNanobotDisplay();
 
