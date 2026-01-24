@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { Treasure, EssenceDropper } from '../../treasure';
 import { Enemy, EnemyTypeConfig, Spitter, EnemyProjectile } from '../../enemies';
 import { Rock, BOULDER_CONFIG, SMALL_ROCK_CONFIG } from '../../rocks';
-import { CombatXpTracker, GameEventManager, CollectionPulse } from '../../../core/components';
+import { CombatXpTracker, GameEventManager, CollectionPulse, HoldToCharge } from '../../../core/components';
 import { TickSystem } from '../../../core/systems';
 import { CurrencyDisplay } from '../ui/CurrencyDisplay';
 import { FloorDisplay } from '../ui/FloorDisplay';
@@ -57,6 +57,7 @@ export class LevelScene extends Phaser.Scene {
   private treasureCollection = new CollectionSystem<Treasure>();
   private gemCollection = new CollectionSystem<WorldGem>();
   private collectionPulse!: CollectionPulse;
+  private spawnCharger!: HoldToCharge;
 
   // Inventory
   private inventory = new InventoryState();
@@ -276,6 +277,9 @@ export class LevelScene extends Phaser.Scene {
 
     // Update collection pulse
     this.collectionPulse.update(delta);
+
+    // Update spawn charger
+    this.spawnCharger.update(delta);
 
     // Update robot goo trail (picks up color when crossing puddles)
     if (!this.robot.isDefeated()) {
@@ -744,43 +748,58 @@ export class LevelScene extends Phaser.Scene {
   }
 
   private setupSpawnControls(): void {
-    const eKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.E);
-
-    eKey?.on('down', () => {
-      // Check capacity
-      if (this.swarmManager.isAtCapacity()) {
-        this.vfx.text.show(this.robot.x, this.robot.y - 40, 'Swarm Full!', {
-          color: '#ff6666',
-          bold: true,
-        });
-        return;
-      }
-
-      const cost = this.swarmManager.getSpawnCost();
-      if (this.currencyDisplay.spend(cost)) {
-        // Sync to React store so the EssenceDisplay updates
-        gameStore.getState().setPlayerEssence(this.currencyDisplay.getAmount());
-
-        const nanobot = this.swarmManager.spawnNanobot();
-        if (nanobot) {
-          // Spawn effect
-          this.vfx.burst.play(nanobot.x, nanobot.y, 0x88ccff, {
-            count: 8,
-            distance: 20,
-            duration: 200,
-          });
-          this.vfx.text.show(nanobot.x, nanobot.y - 20, '+Nanobot', {
-            color: '#88ccff',
+    this.spawnCharger = new HoldToCharge(this, {
+      chargeTime: 600,
+      decayRate: 2.5,
+      radius: 40,
+      color: 0x88ccff,
+      lineWidth: 4,
+    })
+      .bindKey(Phaser.Input.Keyboard.KeyCodes.E)
+      .setTarget(() => ({ x: this.robot.x, y: this.robot.y }))
+      .onChargeStart(() => {
+        // Check affordability before starting charge
+        if (this.swarmManager.isAtCapacity()) {
+          this.vfx.text.show(this.robot.x, this.robot.y - 40, 'Swarm Full!', {
+            color: '#ff6666',
             bold: true,
           });
+          return false; // Cancel charge
         }
-      } else {
-        this.vfx.text.show(this.robot.x, this.robot.y - 40, `Need ${cost} essence!`, {
-          color: '#ff6666',
-          bold: true,
-        });
-      }
-    });
+
+        const cost = this.swarmManager.getSpawnCost();
+        if (this.currencyDisplay.getAmount() < cost) {
+          this.vfx.text.show(this.robot.x, this.robot.y - 40, `Need ${cost} essence!`, {
+            color: '#ff6666',
+            bold: true,
+          });
+          return false; // Cancel charge
+        }
+
+        // Can afford - allow charge to proceed
+        return true;
+      })
+      .onChargeComplete(() => {
+        const cost = this.swarmManager.getSpawnCost();
+        if (this.currencyDisplay.spend(cost)) {
+          // Sync to React store so the EssenceDisplay updates
+          gameStore.getState().setPlayerEssence(this.currencyDisplay.getAmount());
+
+          const nanobot = this.swarmManager.spawnNanobot();
+          if (nanobot) {
+            // Spawn effect
+            this.vfx.burst.play(nanobot.x, nanobot.y, 0x88ccff, {
+              count: 8,
+              distance: 20,
+              duration: 200,
+            });
+            this.vfx.text.show(nanobot.x, nanobot.y - 20, '+Nanobot', {
+              color: '#88ccff',
+              bold: true,
+            });
+          }
+        }
+      });
   }
 
   private setupNanobotCommandControls(): void {

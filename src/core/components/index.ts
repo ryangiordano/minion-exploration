@@ -21,3 +21,4 @@ export { StunVisual, createDebuffVisual } from './StunVisual';
 export { CollectionPulse, type CollectionPulseConfig, type PulseEmitter } from './CollectionPulse';
 export { WanderBehavior, type WanderBehaviorConfig } from './WanderBehavior';
 export { ShieldComponent, type ShieldConfig } from './ShieldComponent';
+export { HoldToCharge, type HoldToChargeConfig, type ChargeTarget } from './HoldToCharge';
