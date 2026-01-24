@@ -22,7 +22,7 @@ export interface SplatterConfig {
 }
 
 const DEFAULT_CONFIG: Required<SplatterConfig> = {
-  opacity: 0.7,
+  opacity: 1.0,
   splatter: true,
   splatterCount: 0, // 0 means random 3-6
   splatterSpread: 1.5,
@@ -71,11 +71,11 @@ export class SplatterSystem {
     this.brush.clear();
 
     // Outer glow
-    this.brush.fillStyle(color, cfg.opacity * 0.4);
+    this.brush.fillStyle(color, 0.4);
     this.brush.fillCircle(0, 0, radius * 1.3);
 
     // Main splatter
-    this.brush.fillStyle(color, cfg.opacity);
+    this.brush.fillStyle(color, 1.0);
     this.brush.fillCircle(0, 0, radius);
 
     this.texture.draw(this.brush, x, y);
@@ -91,7 +91,7 @@ export class SplatterSystem {
         const dotRadius = radius * (0.1 + Math.random() * 0.2);
 
         this.brush.clear();
-        this.brush.fillStyle(color, cfg.opacity * 0.6);
+        this.brush.fillStyle(color, 0.8);
         this.brush.fillCircle(0, 0, dotRadius);
         this.texture.draw(this.brush, dotX, dotY);
       }
