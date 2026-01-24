@@ -77,7 +77,7 @@ export const SPITTER_CONFIG: EnemyTypeConfig = {
   baseStats: {
     maxHp: 3,
     maxMp: 0,
-    strength: 2,
+    strength: 1,
     dexterity: 1,
     magic: 1,
     resilience: 0,
