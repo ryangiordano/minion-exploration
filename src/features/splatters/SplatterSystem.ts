@@ -78,10 +78,6 @@ export class SplatterSystem {
     this.brush.fillStyle(color, cfg.opacity);
     this.brush.fillCircle(0, 0, radius);
 
-    // Inner darker spot
-    this.brush.fillStyle(SPLATTER_COLORS.darkBrown, cfg.opacity * 0.8);
-    this.brush.fillCircle(0, 0, radius * 0.4);
-
     this.texture.draw(this.brush, x, y);
 
     // Splatter dots
@@ -141,17 +137,6 @@ export class SplatterSystem {
         this.addSplatter(px, py, splatRadius, color, { splatter: false });
       });
     }
-
-    // Final outer ring
-    this.scene.time.delayedCall(120, () => {
-      for (let i = 0; i < 8; i++) {
-        const angle = (i / 8) * Math.PI * 2;
-        const dist = radius * (0.8 + Math.random() * 0.2);
-        const px = x + Math.cos(angle) * dist;
-        const py = y + Math.sin(angle) * dist;
-        this.addSplatter(px, py, radius * 0.1, color, { splatter: false });
-      }
-    });
   }
 
   /** Clear all splatters */
