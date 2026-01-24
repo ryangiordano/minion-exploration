@@ -102,21 +102,36 @@ export class SplatterSystem {
     }
   }
 
-  /** Animated burst splatter - splashes outward over time */
+  /** Animated burst splatter - grows outward over time */
   addBurst(
     x: number,
     y: number,
     radius: number = 40,
     color: number = SPLATTER_COLORS.brown
   ): void {
-    // Main splatter
-    this.addSplatter(x, y, radius * 0.6, color);
+    const startRadius = radius * 0.3;
+    const endRadius = radius * 0.7;
+    const duration = 150;
+    const steps = 8;
 
-    // Animated outward splashes
+    // Animate main splatter growing
+    for (let i = 0; i <= steps; i++) {
+      const delay = (i / steps) * duration;
+      const progress = i / steps;
+      // Ease out for smooth deceleration
+      const easedProgress = 1 - Math.pow(1 - progress, 2);
+      const currentRadius = startRadius + (endRadius - startRadius) * easedProgress;
+
+      this.scene.time.delayedCall(delay, () => {
+        this.addSplatter(x, y, currentRadius, color, { splatter: false });
+      });
+    }
+
+    // Animated outward splashes (staggered)
     const numSplats = 6 + Math.floor(Math.random() * 4);
     for (let i = 0; i < numSplats; i++) {
       const angle = (i / numSplats) * Math.PI * 2 + Math.random() * 0.5;
-      const delay = i * 15;
+      const delay = 50 + i * 15;
 
       this.scene.time.delayedCall(delay, () => {
         const dist = radius * (0.4 + Math.random() * 0.5);
@@ -128,7 +143,7 @@ export class SplatterSystem {
     }
 
     // Final outer ring
-    this.scene.time.delayedCall(100, () => {
+    this.scene.time.delayedCall(120, () => {
       for (let i = 0; i < 8; i++) {
         const angle = (i / 8) * Math.PI * 2;
         const dist = radius * (0.8 + Math.random() * 0.2);
