@@ -150,7 +150,7 @@ export class SplatterSystem {
       // Picked up goo - start/refresh trail
       this.trails.set(entityId, {
         color: gooColor,
-        remaining: 150, // pixels of trail to leave
+        remaining: 250, // pixels of trail to leave
         lastX: x,
         lastY: y,
       });
@@ -169,12 +169,12 @@ export class SplatterSystem {
           const py = trail.lastY + dy * t;
 
           // Fade based on remaining trail
-          const fade = trail.remaining / 150;
-          const trailRadius = radius * 0.4 * fade;
+          const fade = trail.remaining / 250;
+          const trailRadius = radius * 0.6 * fade;
 
           if (trailRadius > 1) {
             this.brush.clear();
-            this.brush.fillStyle(trail.color, 0.6 * fade);
+            this.brush.fillStyle(trail.color, 0.5 * fade);
             this.brush.fillCircle(0, 0, trailRadius);
             this.texture.draw(this.brush, px, py);
           }
@@ -198,7 +198,8 @@ export class SplatterSystem {
     this.texture.snapshotPixel(Math.floor(x), Math.floor(y), (snapshot) => {
       // This is async, so we cache the result
       if (snapshot instanceof Phaser.Display.Color) {
-        if (snapshot.alpha > 0) {
+        // Only count as goo if alpha is very high (ignore trail marks which start at 0.6 opacity)
+        if (snapshot.alpha > 250) {
           this.lastSampledColor = Phaser.Display.Color.GetColor(snapshot.red, snapshot.green, snapshot.blue);
         } else {
           this.lastSampledColor = null;

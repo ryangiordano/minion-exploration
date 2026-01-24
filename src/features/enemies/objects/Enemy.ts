@@ -83,6 +83,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
 
     this.setTexture(textureKey);
     this.setScale(2);
+    this.setDepth(LAYERS.ENTITIES);
 
     // Calculate visual dimensions for 2x scale
     const visualRadius = radius * 2;

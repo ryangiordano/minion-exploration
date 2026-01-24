@@ -15,7 +15,7 @@ import { CollectionSystem } from '../systems';
 import { LaunchPad } from '../objects/LaunchPad';
 import { Robot } from '../../robot';
 import { SwarmManager, Nanobot } from '../../nanobots';
-import { SplatterSystem, SPLATTER_COLORS } from '../../splatters';
+import { SplatterSystem } from '../../splatters';
 import { Combatable } from '../../../core/types/interfaces';
 import { getEdgeDistance } from '../../../core/utils/distance';
 import { gameStore, GemSlotType } from '../../../ui/store/gameStore';
@@ -117,8 +117,8 @@ export class LevelScene extends Phaser.Scene {
     // Visual effects manager
     this.vfx = new Vfx(this);
 
-    // Splatter system for enemy death effects
-    this.splatterSystem = new SplatterSystem(this, this.worldWidth, this.worldHeight, 5);
+    // Splatter system for enemy death effects (depth 1 = below entities)
+    this.splatterSystem = new SplatterSystem(this, this.worldWidth, this.worldHeight, 1);
 
     // Arrival/Launch sequences
     this.arrivalSequence = new ArrivalSequence(this);
@@ -280,6 +280,15 @@ export class LevelScene extends Phaser.Scene {
     // Update robot goo trail (picks up color when crossing puddles)
     if (!this.robot.isDefeated()) {
       this.splatterSystem.updateTrail('robot', this.robot.x, this.robot.y, 15);
+    }
+
+    // Update nanobot goo trails
+    const nanobots = this.swarmManager.getNanobots();
+    for (let i = 0; i < nanobots.length; i++) {
+      const nanobot = nanobots[i];
+      if (!nanobot.isDefeated()) {
+        this.splatterSystem.updateTrail(`nanobot_${i}`, nanobot.x, nanobot.y, 8);
+      }
     }
 
     // Update nanobot count display
@@ -1101,9 +1110,6 @@ export class LevelScene extends Phaser.Scene {
       if (index > -1) {
         this.rocks.splice(index, 1);
       }
-
-      // Dust/debris splatter effect
-      this.splatterSystem.addBurst(deadRock.x, deadRock.y, 35, SPLATTER_COLORS.grey);
 
       // Drop essence
       const dropAmount = deadRock.getEssenceDropAmount();

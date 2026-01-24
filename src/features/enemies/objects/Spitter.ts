@@ -121,6 +121,7 @@ export class Spitter extends Phaser.Physics.Arcade.Sprite implements Combatable,
 
     this.setTexture(textureKey);
     this.setScale(2);
+    this.setDepth(LAYERS.ENTITIES);
 
     const visualRadius = radius * 2;
     this.setCollideWorldBounds(true);
@@ -215,7 +216,7 @@ export class Spitter extends Phaser.Physics.Arcade.Sprite implements Combatable,
   }
 
   public takeDamage(amount: number, attacker?: Combatable): void {
-    if (this.defeated) return;
+    if (this.defeated || !this.scene) return;
 
     if (attacker && !attacker.isDefeated()) {
       this.threatTracker.addThreat(attacker, 50);
