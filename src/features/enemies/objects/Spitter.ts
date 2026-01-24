@@ -185,6 +185,10 @@ export class Spitter extends Phaser.Physics.Arcade.Sprite implements Combatable,
     return this.typeConfig.radius;
   }
 
+  public getColor(): number {
+    return this.typeConfig.color;
+  }
+
   public getCollisionBody(): Phaser.Physics.Arcade.Image {
     return this.collisionBody;
   }

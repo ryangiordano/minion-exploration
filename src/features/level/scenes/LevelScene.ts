@@ -1203,8 +1203,8 @@ export class LevelScene extends Phaser.Scene {
         this.enemies.splice(index, 1);
       }
 
-      // Death splatter effect
-      this.splatterSystem.addBurst(deadEnemy.x, deadEnemy.y, 50, SPLATTER_COLORS.brown);
+      // Death splatter effect (uses enemy's color)
+      this.splatterSystem.addBurst(deadEnemy.x, deadEnemy.y, 50, deadEnemy.getColor());
 
       // Drop essence loot
       const dropAmount = deadEnemy.getEssenceDropAmount();
@@ -1240,8 +1240,8 @@ export class LevelScene extends Phaser.Scene {
         this.spitters.splice(index, 1);
       }
 
-      // Death splatter effect (green for spitters)
-      this.splatterSystem.addBurst(deadSpitter.x, deadSpitter.y, 45, SPLATTER_COLORS.green);
+      // Death splatter effect (uses spitter's color)
+      this.splatterSystem.addBurst(deadSpitter.x, deadSpitter.y, 45, deadSpitter.getColor());
 
       // Drop essence loot
       const dropAmount = deadSpitter.getEssenceDropAmount();

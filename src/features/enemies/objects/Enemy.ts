@@ -205,6 +205,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
     return this.typeConfig.radius;
   }
 
+  public getColor(): number {
+    return this.typeConfig.color;
+  }
+
   /** Get the inner collision body for physics collider setup */
   public getCollisionBody(): Phaser.Physics.Arcade.Image {
     return this.collisionBody;
