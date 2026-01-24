@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { Combatable, AttackConfig, AggroCapable } from '../../../core/types/interfaces';
-import { StatBar, HP_BAR_DEFAULTS, AttackBehavior, ThreatTracker, TargetedMovement, LevelingSystem, defaultXpCurve, FloatingText, DebuffManager, DebuffType, createDebuffVisual } from '../../../core/components';
+import { StatBar, HP_BAR_DEFAULTS, AttackBehavior, ThreatTracker, TargetedMovement, LevelingSystem, defaultXpCurve, FloatingText, DebuffManager, DebuffType, createDebuffVisual, WanderBehavior } from '../../../core/components';
 import { LAYERS } from '../../../core/config';
 import { EnemyTypeConfig, EnemyConfig } from '../types';
 import { LACKEY_CONFIG } from '../configs';
@@ -25,6 +25,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
   private attackBehavior: AttackBehavior;
   private threatTracker: ThreatTracker;
   private movement: TargetedMovement;
+  private wanderBehavior: WanderBehavior;
   private nearbyTargets: Combatable[] = [];
   private attackRange: number;
   private followAngleOffset = 0;
@@ -113,6 +114,15 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
       arrivalDistance: 5,
       slowdownDistance: 40,
       minSpeedScale: 0.3
+    });
+
+    // Setup wandering behavior for idle state
+    this.wanderBehavior = new WanderBehavior(this, {
+      speed: this.typeConfig.speed * 0.5, // Wander slower than chase
+      minWaitTime: 500,
+      maxWaitTime: 2000,
+      minTravelDistance: 50,
+      maxTravelDistance: 150
     });
 
     // Create HP bar component (auto-hides when full)
@@ -397,6 +407,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
         this.movement.moveTo(targetX, targetY);
         this.movement.update();
       }
+    } else {
+      // No target - wander around idly
+      this.wanderBehavior.update(delta);
     }
   }
 
@@ -453,6 +466,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
     const deathX = this.x;
     const deathY = this.y;
     const baseRadius = this.typeConfig.radius;
+    // Capture scene reference before any delays (enemy may be destroyed)
+    const scene = this.scene;
 
     // Spawn 3 circles with staggered timing, different colors, and scattered positions
     const colors = [0xff0000, 0xff8800, 0xffff00]; // Red, orange, yellow
@@ -466,8 +481,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
       const particleX = deathX + offsetX;
       const particleY = deathY + offsetY;
 
-      this.scene.time.delayedCall(delays[index], () => {
-        const graphics = this.scene.add.graphics();
+      scene.time.delayedCall(delays[index], () => {
+        const graphics = scene.add.graphics();
         graphics.setDepth(LAYERS.EFFECTS);
 
         const startRadius = baseRadius * scales[index];
@@ -475,7 +490,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite implements Combatable, A
         const duration = 300;
 
         let elapsed = 0;
-        const updateEvent = this.scene.time.addEvent({
+        const updateEvent = scene.time.addEvent({
           delay: 16,
           repeat: Math.floor(duration / 16),
           callback: () => {

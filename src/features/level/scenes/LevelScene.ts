@@ -15,11 +15,15 @@ import { CollectionSystem } from '../systems';
 import { LaunchPad } from '../objects/LaunchPad';
 import { Robot } from '../../robot';
 import { SwarmManager, Nanobot } from '../../nanobots';
+import { SplatterSystem, SPLATTER_COLORS } from '../../splatters';
 import { Combatable } from '../../../core/types/interfaces';
 import { getEdgeDistance } from '../../../core/utils/distance';
 import { gameStore, GemSlotType } from '../../../ui/store/gameStore';
 import { GemRegistry } from '../../upgrade';
 import { ShieldGem } from '../../../core/abilities/gems/ShieldGem';
+import { LifestealGem } from '../../../core/abilities/gems/LifestealGem';
+import { HealPulseGem } from '../../../core/abilities/gems/HealPulseGem';
+import { RangedAttackGem } from '../../../core/abilities/gems/RangedAttackGem';
 import type { RobotState, NanobotState, InventoryGemState, EquippedGemState } from '../../../shared/types';
 
 export class LevelScene extends Phaser.Scene {
@@ -59,6 +63,7 @@ export class LevelScene extends Phaser.Scene {
 
   // Visual effects
   private vfx!: Vfx;
+  private splatterSystem!: SplatterSystem;
 
   // Roguelike state
   private gameState = new GameState();
@@ -111,6 +116,9 @@ export class LevelScene extends Phaser.Scene {
 
     // Visual effects manager
     this.vfx = new Vfx(this);
+
+    // Splatter system for enemy death effects
+    this.splatterSystem = new SplatterSystem(this, this.worldWidth, this.worldHeight, 5);
 
     // Arrival/Launch sequences
     this.arrivalSequence = new ArrivalSequence(this);
@@ -623,6 +631,9 @@ export class LevelScene extends Phaser.Scene {
       projectile.destroy();
     }
     this.projectiles = [];
+
+    // Clear splatters from previous floor
+    this.splatterSystem.clear();
   }
 
   private setupCollectionSystems(): void {
@@ -840,8 +851,15 @@ export class LevelScene extends Phaser.Scene {
       baseOrbitDistance: 50,
     });
 
-    // DEBUG: Equip shield gem to nanobot slot for testing (slot 3 = first nanobot slot)
+    // DEBUG: Equip gems for demo
+    // Robot personal slots (0, 1, 2): Lifesteal, HealPulse, Ranged
+    this.robot.equipGem(new LifestealGem(), 0);
+    this.robot.equipGem(new HealPulseGem(), 1);
+    this.robot.equipGem(new RangedAttackGem(), 2);
+    // Nanobot slots (3, 4, 5): Shield, Ranged, HealPulse
     this.robot.equipGem(new ShieldGem(), 3);
+    this.robot.equipGem(new RangedAttackGem(), 4);
+    this.robot.equipGem(new HealPulseGem(), 5);
 
     // Spawn starting nanobots
     const startingNanobots = 3;
@@ -1079,6 +1097,9 @@ export class LevelScene extends Phaser.Scene {
         this.rocks.splice(index, 1);
       }
 
+      // Dust/debris splatter effect
+      this.splatterSystem.addBurst(deadRock.x, deadRock.y, 35, SPLATTER_COLORS.grey);
+
       // Drop essence
       const dropAmount = deadRock.getEssenceDropAmount();
       this.essenceDropper.drop(deadRock.x, deadRock.y, dropAmount, (treasure) => {
@@ -1182,6 +1203,9 @@ export class LevelScene extends Phaser.Scene {
         this.enemies.splice(index, 1);
       }
 
+      // Death splatter effect
+      this.splatterSystem.addBurst(deadEnemy.x, deadEnemy.y, 50, SPLATTER_COLORS.brown);
+
       // Drop essence loot
       const dropAmount = deadEnemy.getEssenceDropAmount();
       this.essenceDropper.drop(deadEnemy.x, deadEnemy.y, dropAmount, (treasure) => {
@@ -1215,6 +1239,9 @@ export class LevelScene extends Phaser.Scene {
       if (index > -1) {
         this.spitters.splice(index, 1);
       }
+
+      // Death splatter effect (green for spitters)
+      this.splatterSystem.addBurst(deadSpitter.x, deadSpitter.y, 45, SPLATTER_COLORS.green);
 
       // Drop essence loot
       const dropAmount = deadSpitter.getEssenceDropAmount();
