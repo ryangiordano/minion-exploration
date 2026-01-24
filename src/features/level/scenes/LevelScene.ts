@@ -103,8 +103,8 @@ export class LevelScene extends Phaser.Scene {
   create(): void {
     this.physics.world.setBounds(0, 0, this.worldWidth, this.worldHeight);
 
-    // Add background color
-    this.cameras.main.setBackgroundColor('#2d4a3e');
+    // Add background color (light blue base for checkerboard)
+    this.cameras.main.setBackgroundColor('#5588bb');
 
     // Set camera bounds to match world
     this.cameras.main.setBounds(0, 0, this.worldWidth, this.worldHeight);
@@ -1025,25 +1025,19 @@ export class LevelScene extends Phaser.Scene {
     const graphics = this.add.graphics();
     const gridSize = 100;
 
-    graphics.lineStyle(1, 0x1a2f24, 0.5);
+    // Checkerboard pattern with two blue tones
+    const lightBlue = 0x6699cc;
+    const darkBlue = 0x5588bb; // matches background
 
-    for (let x = 0; x <= worldWidth; x += gridSize) {
-      graphics.lineBetween(x, 0, x, worldHeight);
-    }
-
-    for (let y = 0; y <= worldHeight; y += gridSize) {
-      graphics.lineBetween(0, y, worldWidth, y);
-    }
-
-    // Scattered reference objects
-    for (let i = 0; i < 30; i++) {
-      const x = Phaser.Math.Between(50, worldWidth - 50);
-      const y = Phaser.Math.Between(50, worldHeight - 50);
-      const size = Phaser.Math.Between(8, 20);
-      const color = Phaser.Math.Between(0, 1) === 0 ? 0x3d5a46 : 0x556b58;
-
-      const circle = this.add.circle(x, y, size, color);
-      circle.setAlpha(0.6);
+    for (let x = 0; x < worldWidth; x += gridSize) {
+      for (let y = 0; y < worldHeight; y += gridSize) {
+        const isEven = ((x / gridSize) + (y / gridSize)) % 2 === 0;
+        if (isEven) {
+          graphics.fillStyle(lightBlue, 1);
+          graphics.fillRect(x, y, gridSize, gridSize);
+        }
+        // Odd squares use the background color (darkBlue), no need to draw
+      }
     }
   }
 
@@ -1097,7 +1091,7 @@ export class LevelScene extends Phaser.Scene {
     // Spawn small rocks in clusters (more fun to dash through)
     const numClusters = 3;
     const rocksPerCluster = 4;
-    const clusterSpread = 40;
+    const clusterSpread = 80; // Wide spread for breathing room
 
     for (let c = 0; c < numClusters; c++) {
       const clusterCenter = this.getSpawnPositionAwayFrom(
