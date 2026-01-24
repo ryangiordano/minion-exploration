@@ -5,6 +5,13 @@ import { FloatingText } from '../../../core/components/FloatingText';
 import { LAYERS } from '../../../core/config';
 import { RockTypeConfig } from '../types';
 import { SMALL_ROCK_CONFIG } from '../configs';
+import { RockTextureGenerator } from '../RockTextureGenerator';
+
+/** Counter for generating unique rock seeds */
+let rockInstanceCounter = 0;
+
+/** Light greyscale colors for debris particles */
+const DEBRIS_COLORS = [0x8a8a8a, 0x9a9a9a, 0x7d7d7d, 0xa5a5a5];
 
 /**
  * A breakable rock that can be targeted by minions or destroyed by dashing.
@@ -14,6 +21,7 @@ export class Rock extends Phaser.Physics.Arcade.Image implements Combatable {
   private typeConfig: RockTypeConfig;
   private hp: number;
   private defeated = false;
+  private instanceSeed: number;
 
   // Visual components
   private hpBar: StatBar;
@@ -22,17 +30,21 @@ export class Rock extends Phaser.Physics.Arcade.Image implements Combatable {
   // Death callback
   private onDeathCallback?: (rock: Rock) => void;
 
+  // Shared texture generator
+  private static textureGenerator: RockTextureGenerator | null = null;
+
   constructor(scene: Phaser.Scene, x: number, y: number, config?: RockTypeConfig) {
     super(scene, x, y, '');
 
     this.typeConfig = config ?? SMALL_ROCK_CONFIG;
     this.hp = this.typeConfig.baseHp;
+    this.instanceSeed = rockInstanceCounter++;
 
-    // Create texture for this rock type
-    const textureKey = this.getTextureKey();
-    if (!scene.textures.exists(textureKey)) {
-      this.createRockTexture(scene, textureKey);
+    // Generate procedural texture
+    if (!Rock.textureGenerator) {
+      Rock.textureGenerator = new RockTextureGenerator(scene);
     }
+    const textureKey = Rock.textureGenerator.generateTexture(this.typeConfig, this.instanceSeed);
 
     this.setTexture(textureKey);
     this.setOrigin(0.5, 0.5);
@@ -40,22 +52,15 @@ export class Rock extends Phaser.Physics.Arcade.Image implements Combatable {
     // Add to scene with physics
     scene.add.existing(this);
 
-    // Use static body for blocking rocks (truly immovable), dynamic for non-blocking
-    const isStatic = this.typeConfig.blocksMovement;
-    scene.physics.add.existing(this, isStatic);
+    // All rocks use static bodies - they never move
+    scene.physics.add.existing(this, true);
 
     this.setDepth(LAYERS.ENTITIES);
 
-    // Set collision body to match visual size, centered on the sprite
-    const { width, height } = this.typeConfig;
-    if (isStatic) {
-      const body = this.body as Phaser.Physics.Arcade.StaticBody;
-      body.setSize(width, height, true); // Center the body on the sprite
-    } else {
-      const body = this.body as Phaser.Physics.Arcade.Body;
-      body.setSize(width, height);
-      body.setImmovable(true);
-    }
+    // Set collision body to match visual size (square), centered on the sprite
+    const { size } = this.typeConfig;
+    const body = this.body as Phaser.Physics.Arcade.StaticBody;
+    body.setSize(size, size, true);
 
     // Make interactive for click targeting
     this.setInteractive({ useHandCursor: true });
@@ -63,32 +68,13 @@ export class Rock extends Phaser.Physics.Arcade.Image implements Combatable {
     // HP bar (auto-hides when full)
     this.hpBar = new StatBar(scene, {
       ...HP_BAR_DEFAULTS,
-      width: this.typeConfig.width,
-      offsetY: -this.typeConfig.height / 2 - 8,
+      width: this.typeConfig.size,
+      offsetY: -this.typeConfig.size / 2 - 8,
     });
     this.updateHpBar();
 
     // Floating damage text
     this.floatingText = new FloatingText(scene);
-  }
-
-  private getTextureKey(): string {
-    return `rock_${this.typeConfig.width}_${this.typeConfig.height}_${this.typeConfig.color.toString(16)}`;
-  }
-
-  private createRockTexture(scene: Phaser.Scene, key: string): void {
-    const { width, height, color, strokeColor } = this.typeConfig;
-    const graphics = scene.add.graphics();
-    const cornerRadius = Math.min(width, height) * 0.2;
-
-    // Draw filled rounded rectangle with stroke
-    graphics.fillStyle(color, 1);
-    graphics.fillRoundedRect(0, 0, width, height, cornerRadius);
-    graphics.lineStyle(2, strokeColor);
-    graphics.strokeRoundedRect(0, 0, width, height, cornerRadius);
-
-    graphics.generateTexture(key, width, height);
-    graphics.destroy();
   }
 
   private updateHpBar(): void {
@@ -100,8 +86,7 @@ export class Rock extends Phaser.Physics.Arcade.Image implements Combatable {
   // ============================================
 
   public getRadius(): number {
-    // Return average of half-width and half-height for targeting purposes
-    return (this.typeConfig.width + this.typeConfig.height) / 4;
+    return this.typeConfig.size / 2;
   }
 
   public getCurrentHp(): number {
@@ -122,7 +107,7 @@ export class Rock extends Phaser.Physics.Arcade.Image implements Combatable {
     this.floatingText.show({
       text: `-${amount}`,
       x: this.x,
-      y: this.y - this.typeConfig.height / 2,
+      y: this.y - this.typeConfig.size / 2,
       color: '#cccccc',
       fontSize: 12,
       duration: 600,
@@ -132,7 +117,7 @@ export class Rock extends Phaser.Physics.Arcade.Image implements Combatable {
     // Visual feedback - brief flash
     this.setTint(0xffffff);
     this.scene.time.delayedCall(80, () => {
-      if (!this.defeated) this.clearTint();
+      if (!this.defeated && this.scene) this.clearTint();
     });
 
     // Damage particle - small debris effect
@@ -191,61 +176,86 @@ export class Rock extends Phaser.Physics.Arcade.Image implements Combatable {
   }
 
   private playDamageParticle(): void {
-    // Small debris chunks flying off
-    const numChunks = 3;
-    for (let i = 0; i < numChunks; i++) {
-      const chunk = this.scene.add.rectangle(
+    // Small debris flying off when hit
+    const numDebris = 2;
+    for (let i = 0; i < numDebris; i++) {
+      this.spawnDebris(
         this.x + Phaser.Math.Between(-10, 10),
         this.y + Phaser.Math.Between(-10, 10),
-        Phaser.Math.Between(3, 6),
-        Phaser.Math.Between(3, 6),
-        this.typeConfig.color
+        { velocityMultiplier: 0.6, fadeDelay: 200 }
       );
-      chunk.setDepth(LAYERS.EFFECTS);
-
-      const angle = Math.random() * Math.PI * 2;
-      const distance = Phaser.Math.Between(20, 40);
-
-      this.scene.tweens.add({
-        targets: chunk,
-        x: chunk.x + Math.cos(angle) * distance,
-        y: chunk.y + Math.sin(angle) * distance - 10, // Arc upward slightly
-        alpha: 0,
-        duration: 300,
-        ease: 'Quad.easeOut',
-        onComplete: () => chunk.destroy(),
-      });
     }
   }
 
   private playDeathParticles(): void {
-    // More debris on death
-    const numChunks = 8;
-    for (let i = 0; i < numChunks; i++) {
-      const size = Phaser.Math.Between(4, 10);
-      const chunk = this.scene.add.rectangle(
-        this.x + Phaser.Math.Between(-this.typeConfig.width / 3, this.typeConfig.width / 3),
-        this.y + Phaser.Math.Between(-this.typeConfig.height / 3, this.typeConfig.height / 3),
-        size,
-        size,
-        this.typeConfig.color
+    // More debris on death - they fly out, arc, land and fade
+    const numDebris = Phaser.Math.Between(4, 6);
+    for (let i = 0; i < numDebris; i++) {
+      this.spawnDebris(
+        this.x + Phaser.Math.Between(-this.typeConfig.size / 4, this.typeConfig.size / 4),
+        this.y + Phaser.Math.Between(-this.typeConfig.size / 4, this.typeConfig.size / 4),
+        { velocityMultiplier: 1, fadeDelay: 400 }
       );
-      chunk.setDepth(LAYERS.EFFECTS);
-
-      const angle = Math.random() * Math.PI * 2;
-      const distance = Phaser.Math.Between(30, 60);
-
-      this.scene.tweens.add({
-        targets: chunk,
-        x: chunk.x + Math.cos(angle) * distance,
-        y: chunk.y + Math.sin(angle) * distance,
-        alpha: 0,
-        rotation: Math.random() * Math.PI,
-        duration: 400,
-        ease: 'Quad.easeOut',
-        onComplete: () => chunk.destroy(),
-      });
     }
+  }
+
+  /** Spawn a circular debris piece that flies out, lands and fades */
+  private spawnDebris(
+    x: number,
+    y: number,
+    options: { velocityMultiplier: number; fadeDelay: number }
+  ): void {
+    if (!this.scene) return;
+
+    // Capture scene reference for callbacks
+    const scene = this.scene;
+
+    // Create a small circle debris piece
+    const debrisRadius = Phaser.Math.Between(2, 4);
+    const debrisColor = Phaser.Utils.Array.GetRandom(DEBRIS_COLORS);
+
+    const circle = scene.add.circle(x, y, debrisRadius, debrisColor);
+    circle.setDepth(LAYERS.EFFECTS);
+
+    // Random outward angle
+    const angle = Math.random() * Math.PI * 2;
+    const speed = Phaser.Math.Between(80, 150) * options.velocityMultiplier;
+    const velocityX = Math.cos(angle) * speed;
+    const velocityY = Math.sin(angle) * speed - 100; // Launch upward
+
+    // Simulate physics with tweens (arc trajectory)
+    const gravity = 400;
+    const duration = 500;
+
+    // Calculate landing position (simple ballistic arc)
+    const landX = x + velocityX * (duration / 1000);
+    const landY = y + velocityY * (duration / 1000) + 0.5 * gravity * Math.pow(duration / 1000, 2);
+
+    // Arc motion
+    scene.tweens.add({
+      targets: circle,
+      x: landX,
+      duration: duration,
+      ease: 'Linear',
+    });
+
+    // Vertical arc (up then down with gravity)
+    scene.tweens.add({
+      targets: circle,
+      y: { value: landY, ease: 'Quad.easeIn' },
+      duration: duration,
+    });
+
+    // After landing, fade out
+    scene.time.delayedCall(duration + options.fadeDelay, () => {
+      if (!circle.active) return;
+      scene.tweens.add({
+        targets: circle,
+        alpha: 0,
+        duration: 300,
+        onComplete: () => circle.destroy(),
+      });
+    });
   }
 
   update(): void {
