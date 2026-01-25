@@ -20,10 +20,6 @@ import { Combatable } from '../../../core/types/interfaces';
 import { getEdgeDistance } from '../../../core/utils/distance';
 import { gameStore, GemSlotType } from '../../../ui/store/gameStore';
 import { GemRegistry } from '../../upgrade';
-import { ShieldGem } from '../../../core/abilities/gems/ShieldGem';
-import { LifestealGem } from '../../../core/abilities/gems/LifestealGem';
-import { HealPulseGem } from '../../../core/abilities/gems/HealPulseGem';
-import { RangedAttackGem } from '../../../core/abilities/gems/RangedAttackGem';
 import type { RobotState, NanobotState, InventoryGemState, EquippedGemState } from '../../../shared/types';
 
 export class LevelScene extends Phaser.Scene {
@@ -884,16 +880,6 @@ export class LevelScene extends Phaser.Scene {
       baseOrbitDistance: 50,
     });
 
-    // DEBUG: Equip gems for demo
-    // Robot personal slots (0, 1, 2): Lifesteal, HealPulse, Ranged
-    this.robot.equipGem(new LifestealGem(), 0);
-    this.robot.equipGem(new HealPulseGem(), 1);
-    this.robot.equipGem(new RangedAttackGem(), 2);
-    // Nanobot slots (3, 4, 5): Shield, Ranged, HealPulse
-    this.robot.equipGem(new ShieldGem(), 3);
-    this.robot.equipGem(new RangedAttackGem(), 4);
-    this.robot.equipGem(new HealPulseGem(), 5);
-
     // Spawn starting nanobots
     const startingNanobots = 3;
     for (let i = 0; i < startingNanobots; i++) {
@@ -1025,9 +1011,8 @@ export class LevelScene extends Phaser.Scene {
     const graphics = this.add.graphics();
     const gridSize = 100;
 
-    // Checkerboard pattern with two blue tones
+    // Checkerboard pattern - light blue squares, background is the darker tone
     const lightBlue = 0x6699cc;
-    const darkBlue = 0x5588bb; // matches background
 
     for (let x = 0; x < worldWidth; x += gridSize) {
       for (let y = 0; y < worldHeight; y += gridSize) {
@@ -1036,7 +1021,6 @@ export class LevelScene extends Phaser.Scene {
           graphics.fillStyle(lightBlue, 1);
           graphics.fillRect(x, y, gridSize, gridSize);
         }
-        // Odd squares use the background color (darkBlue), no need to draw
       }
     }
   }
@@ -1129,6 +1113,13 @@ export class LevelScene extends Phaser.Scene {
       this.essenceDropper.drop(deadRock.x, deadRock.y, dropAmount, (treasure) => {
         this.treasureCollection.add(treasure);
       });
+
+      // Boulders have 10% chance to drop a gem
+      if (deadRock.blocksMovement() && Math.random() < 0.1) {
+        this.gemDropper.dropRandom(deadRock.x, deadRock.y, (worldGem) => {
+          this.gemCollection.add(worldGem);
+        });
+      }
     });
 
     // Click to command nanobots to attack
@@ -1236,10 +1227,12 @@ export class LevelScene extends Phaser.Scene {
         this.treasureCollection.add(treasure);
       });
 
-      // Drop a random gem (100% chance for now)
-      this.gemDropper.dropRandom(deadEnemy.x, deadEnemy.y, (worldGem) => {
-        this.gemCollection.add(worldGem);
-      });
+      // 10% chance to drop a random gem
+      if (Math.random() < 0.1) {
+        this.gemDropper.dropRandom(deadEnemy.x, deadEnemy.y, (worldGem) => {
+          this.gemCollection.add(worldGem);
+        });
+      }
     });
 
     return enemy;
@@ -1273,10 +1266,12 @@ export class LevelScene extends Phaser.Scene {
         this.treasureCollection.add(treasure);
       });
 
-      // Drop a random gem
-      this.gemDropper.dropRandom(deadSpitter.x, deadSpitter.y, (worldGem) => {
-        this.gemCollection.add(worldGem);
-      });
+      // 10% chance to drop a random gem
+      if (Math.random() < 0.1) {
+        this.gemDropper.dropRandom(deadSpitter.x, deadSpitter.y, (worldGem) => {
+          this.gemCollection.add(worldGem);
+        });
+      }
     });
 
     return spitter;
